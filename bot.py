@@ -1,3 +1,4 @@
+import os
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -12,9 +13,12 @@ from telegram.ext import (
 
 # ---------- НАСТРОЙКИ ----------
 
-BOT_TOKEN = "BOT_TOKEN"              # токен бота
-CHANNEL_USERNAME = "@tatiataro" # юзернейм канала (с @)
-CHANNEL_LINK = "https://t.me/tatiataro"  # ссылка на канал
+# Токен берём из переменной окружения BOT_TOKEN (она будет задана в Render)
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+# Если хочешь, можешь потом вывести это в переменные окружения тоже
+CHANNEL_USERNAME = "@YourChannelUsername"          # юзернейм канала (для текста)
+CHANNEL_LINK = "https://t.me/YourChannelUsername"  # ссылка на канал
 
 # Краткие расшифровки карт (6 штук под твой QR)
 CARDS = {
@@ -57,7 +61,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     args = context.args
 
-    # Определяем, какая карта пришла в параметре ?start=
+    # Определяем, какая карта пришла из параметра ?start=
     if args:
         card_key = args[0]
         text = CARDS.get(
@@ -75,8 +79,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
     # Кнопки под раскладом:
-    # 1) Подписаться на канал
-    # 2) Получать рассылки в ЛС (бот добавит в файл subs.txt)
+    # 1) Подписаться на канал (url)
+    # 2) Получать рассылки в ЛС (callback 'subscribe')
     keyboard = [
         [InlineKeyboardButton("📢 Подписаться на канал", url=CHANNEL_LINK)],
         [InlineKeyboardButton("🔔 Получать рассылки в ЛС", callback_data="subscribe")],
@@ -99,6 +103,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer()
 
+    # Лог для отладки
     print(f"Кнопка нажата! data={data}, user_id={user_id}")
 
     if data == "subscribe":
@@ -117,6 +122,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------- ЗАПУСК БОТА ----------
 
 def main():
+    if not BOT_TOKEN:
+        raise RuntimeError(
+            "Переменная окружения BOT_TOKEN не задана. "
+            "Установите её в настройках Render или локально перед запуском."
+        )
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -127,4 +138,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
