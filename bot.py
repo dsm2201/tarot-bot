@@ -6,8 +6,8 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 # ===== НАСТРОЙКИ =====
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-BASE_URL = os.getenv("BASE_URL")  # публичный URL Render, например: https://tarot-bot.onrender.com
-WEBHOOK_PATH = "/webhook"        # путь, на который Telegram будет слать апдейты
+BASE_URL = os.getenv("BASE_URL")       # например: https://tarot-bot-1.onrender.com
+WEBHOOK_PATH = "/webhook"             # путь вебхука
 
 CHANNEL_USERNAME = "@YourChannelUsername"
 CHANNEL_LINK = "https://t.me/YourChannelUsername"
@@ -51,7 +51,11 @@ flask_app = Flask(__name__)
 application: Application | None = None
 
 
+# ===== ОБРАБОТЧИК /start =====
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(">>> /start handler called, update_id:", update.update_id)
+
     args = context.args
 
     if args:
@@ -67,29 +71,35 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "чтобы получить расшифровку."
         )
 
-    await update.message.reply_text(text)
+    if update.message:
+        await update.message.reply_text(text)
 
-    keyboard = [
-        [InlineKeyboardButton("📢 Подписаться на канал", url=CHANNEL_LINK)],
-        [InlineKeyboardButton("🔔 Получать рассылки в ЛС", callback_data="subscribe")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+        keyboard = [
+            [InlineKeyboardButton("📢 Подписаться на канал", url=CHANNEL_LINK)],
+            [InlineKeyboardButton("🔔 Получать рассылки в ЛС", callback_data="subscribe")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-    info_text = (
-        f"Если откликается расклад — можете подписаться на канал {CHANNEL_USERNAME} "
-        "и/или получать персональные расклады и полезные подсказки в личку."
-    )
+        info_text = (
+            f"Если откликается расклад — можете подписаться на канал {CHANNEL_USERNAME} "
+            "и/или получать персональные расклады и полезные подсказки в личку."
+        )
 
-    await update.message.reply_text(info_text, reply_markup=reply_markup)
+        await update.message.reply_text(info_text, reply_markup=reply_markup)
+    else:
+        print(">>> WARNING: update.message is None в /start")
 
+
+# ===== ОБРАБОТЧИК КНОПОК =====
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
     user_id = query.from_user.id
 
+    print(">>> button handler called, data:", data, "user_id:", user_id)
+
     await query.answer()
-    print(f"Кнопка нажата! data={data}, user_id={user_id}")
 
     if data == "subscribe":
         try:
@@ -104,6 +114,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+# ===== МАРШРУТЫ FLASK =====
+
 @flask_app.route("/", methods=["GET"])
 def index():
     return "Bot is running."
@@ -112,13 +124,26 @@ def index():
 @flask_app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     """Эндпоинт, куда Telegram шлёт апдейты."""
+    global application
+
     if application is None:
+        print(">>> ERROR: application is None в webhook")
         return "Application not ready", 500
 
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put_nowait(update)
+    data = request.get_json(force=True)
+    print(">>> Got update JSON:", data)
+
+    try:
+        update = Update.de_json(data, application.bot)
+        application.update_queue.put_nowait(update)
+    except Exception as e:
+        print(">>> ERROR while handling update:", e)
+        return "Error", 500
+
     return "OK"
 
+
+# ===== ИНИЦИАЛИЗАЦИЯ TELEGRAM APP =====
 
 async def init_telegram_app():
     global application
@@ -129,18 +154,19 @@ async def init_telegram_app():
     if not BASE_URL:
         raise RuntimeError("BASE_URL не задан")
 
+    print(">>> Initializing Application")
     application = Application.builder().token(BOT_TOKEN).updater(None).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
 
-    # Устанавливаем вебхук
     webhook_url = BASE_URL.rstrip("/") + WEBHOOK_PATH
+    print(">>> Setting webhook to:", webhook_url)
     await application.bot.set_webhook(url=webhook_url)
 
     await application.initialize()
     await application.start()
-    print(f"Bot started with webhook {webhook_url}")
+    print(f">>> Bot started with webhook {webhook_url}")
 
 
 def main():
@@ -149,7 +175,7 @@ def main():
     asyncio.run(init_telegram_app())
 
     port = int(os.getenv("PORT", "10000"))
-    # Запуск Flask-сервера; он должен слушать порт для Render
+    print(">>> Starting Flask app on port", port)
     flask_app.run(host="0.0.0.0", port=port)
 
 
