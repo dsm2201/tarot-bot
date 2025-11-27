@@ -1,14 +1,15 @@
 import os
-import asyncio
-from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-
-# ===== НАСТРОЙКИ =====
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-BASE_URL = os.getenv("BASE_URL")       # например: https://tarot-bot-1-i003.onrender.com
-WEBHOOK_PATH = "/webhook"
+PORT = int(os.getenv("PORT", "10000"))  # Render сам прокидывает порт
+
 
 CHANNEL_USERNAME = "@YourChannelUsername"
 CHANNEL_LINK = "https://t.me/YourChannelUsername"
@@ -46,18 +47,9 @@ CARDS = {
     ),
 }
 
-# ===== ГЛОБАЛЬНЫЕ ОБЪЕКТЫ =====
-
-flask_app = Flask(__name__)
-application: Application | None = None
-loop: asyncio.AbstractEventLoop | None = None
-
-
-# ===== ХЕНДЛЕР /start =====
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(">>> /start handler called, update_id:", update.update_id)
-
     args = context.args
 
     if args:
@@ -84,15 +76,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         info_text = (
             f"Если откликается расклад — можете подписаться на канал {CHANNEL_USERNAME} "
-            "и/или получать персональные расклады и полезные подсказки в личку."
+            "и/или получать персональные раскладки и полезные подсказки в личку."
         )
 
         await update.message.reply_text(info_text, reply_markup=reply_markup)
     else:
         print(">>> WARNING: update.message is None в /start")
 
-
-# ===== ХЕНДЛЕР КНОПОК =====
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -116,77 +106,24 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# ===== FLASK-МАРШРУТЫ =====
-
-@flask_app.route("/", methods=["GET"])
-def index():
-    return "Bot is running."
-
-
-@flask_app.route(WEBHOOK_PATH, methods=["POST"])
-def webhook():
-    """Эндпоинт, куда Telegram шлёт апдейты."""
-    global application, loop
-
-    if application is None or loop is None:
-        print(">>> ERROR: application/loop is None в webhook")
-        return "Application not ready", 500
-
-    data = request.get_json(force=True)
-    print(">>> Got update JSON:", data)
-
-    try:
-        update = Update.de_json(data, application.bot)
-    except Exception as e:
-        print(">>> ERROR parsing update:", e)
-        return "Bad update", 400
-
-    # Отдаём обработку апдейта в event loop бота
-    asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
-
-    return "OK"
-
-
-# ===== ИНИЦИАЛИЗАЦИЯ TELEGRAM APP =====
-
-async def init_telegram_app():
-    global application
-
+def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN не задан")
 
-    if not BASE_URL:
-        raise RuntimeError("BASE_URL не задан")
+    app = Application.builder().token(BOT_TOKEN).build()
 
-    print(">>> Initializing Application")
-    application = Application.builder().token(BOT_TOKEN).updater(None).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button))
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button))
+    print(">>> Starting bot with built‑in webhook server")
 
-    webhook_url = BASE_URL.rstrip("/") + WEBHOOK_PATH
-    print(">>> Setting webhook to:", webhook_url)
-    await application.bot.set_webhook(url=webhook_url)
-
-    await application.initialize()
-    await application.start()
-    print(f">>> Bot started with webhook {webhook_url}")
-
-
-def main():
-    global loop
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    # Инициализация Telegram-приложения в нашем loop
-    loop.run_until_complete(init_telegram_app())
-
-    port = int(os.getenv("PORT", "10000"))
-    print(">>> Starting Flask app on port", port)
-
-    # Запускаем Flask в том же процессе (он сам крутит свой HTTP-сервер)
-    flask_app.run(host="0.0.0.0", port=port)
+    # Встроенный веб‑сервер ptb: сам слушает порт и обрабатывает webhook’и.
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="",           # путь, можно оставить пустым
+        allowed_updates=None,  # все типы апдейтов
+    )
 
 
 if __name__ == "__main__":
