@@ -12,7 +12,7 @@ from telegram.ext import (
 
 # ---------- НАСТРОЙКИ ----------
 
-BOT_TOKEN = "7964783959:AAEPM6av7uHZG_PcK8YRz0n0iBQapXxGaCo"              # токен бота
+BOT_TOKEN = "BOT_TOKEN"              # токен бота
 CHANNEL_USERNAME = "@tatiataro" # юзернейм канала (с @)
 CHANNEL_LINK = "https://t.me/tatiataro"  # ссылка на канал
 
@@ -127,3 +127,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
