@@ -110,6 +110,9 @@ def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN не задан")
 
+    # Твой https‑домен Render, можно взять из Overview
+    base_url = os.getenv("BASE_URL", "https://tarot-bot-1-i003.onrender.com")
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -117,14 +120,15 @@ def main():
 
     print(">>> Starting bot with built‑in webhook server")
 
-    # Встроенный веб‑сервер ptb: сам слушает порт и обрабатывает webhook’и.
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path="",           # путь, можно оставить пустым
-        allowed_updates=None,  # все типы апдейтов
+        url_path="",                      # путь, пусть будет корень
+        webhook_url=base_url,             # ВАЖНО: полный https‑URL
+        allowed_updates=None,
     )
 
 
 if __name__ == "__main__":
     main()
+
