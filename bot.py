@@ -1,4 +1,5 @@
 import os
+import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -6,8 +7,8 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 # ===== НАСТРОЙКИ =====
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-BASE_URL = os.getenv("BASE_URL")       # например: https://tarot-bot-1.onrender.com
-WEBHOOK_PATH = "/webhook"             # путь вебхука
+BASE_URL = os.getenv("BASE_URL")       # например: https://tarot-bot-1-i003.onrender.com
+WEBHOOK_PATH = "/webhook"
 
 CHANNEL_USERNAME = "@YourChannelUsername"
 CHANNEL_LINK = "https://t.me/YourChannelUsername"
@@ -45,13 +46,14 @@ CARDS = {
     ),
 }
 
-# ===== Flask-приложение =====
+# ===== ГЛОБАЛЬНЫЕ ОБЪЕКТЫ =====
 
 flask_app = Flask(__name__)
 application: Application | None = None
+loop: asyncio.AbstractEventLoop | None = None
 
 
-# ===== ОБРАБОТЧИК /start =====
+# ===== ХЕНДЛЕР /start =====
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(">>> /start handler called, update_id:", update.update_id)
@@ -90,7 +92,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(">>> WARNING: update.message is None в /start")
 
 
-# ===== ОБРАБОТЧИК КНОПОК =====
+# ===== ХЕНДЛЕР КНОПОК =====
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -114,7 +116,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# ===== МАРШРУТЫ FLASK =====
+# ===== FLASK-МАРШРУТЫ =====
 
 @flask_app.route("/", methods=["GET"])
 def index():
@@ -124,10 +126,10 @@ def index():
 @flask_app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     """Эндпоинт, куда Telegram шлёт апдейты."""
-    global application
+    global application, loop
 
-    if application is None:
-        print(">>> ERROR: application is None в webhook")
+    if application is None or loop is None:
+        print(">>> ERROR: application/loop is None в webhook")
         return "Application not ready", 500
 
     data = request.get_json(force=True)
@@ -135,10 +137,12 @@ def webhook():
 
     try:
         update = Update.de_json(data, application.bot)
-        application.update_queue.put_nowait(update)
     except Exception as e:
-        print(">>> ERROR while handling update:", e)
-        return "Error", 500
+        print(">>> ERROR parsing update:", e)
+        return "Bad update", 400
+
+    # Отдаём обработку апдейта в event loop бота
+    asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
 
     return "OK"
 
@@ -170,12 +174,18 @@ async def init_telegram_app():
 
 
 def main():
-    import asyncio
+    global loop
 
-    asyncio.run(init_telegram_app())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Инициализация Telegram-приложения в нашем loop
+    loop.run_until_complete(init_telegram_app())
 
     port = int(os.getenv("PORT", "10000"))
     print(">>> Starting Flask app on port", port)
+
+    # Запускаем Flask в том же процессе (он сам крутит свой HTTP-сервер)
     flask_app.run(host="0.0.0.0", port=port)
 
 
