@@ -1,26 +1,17 @@
 import os
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-)
+from flask import Flask, request
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# ---------- НАСТРОЙКИ ----------
+# ===== НАСТРОЙКИ =====
 
-# Токен берём из переменной окружения BOT_TOKEN (она будет задана в Render)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+BASE_URL = os.getenv("BASE_URL")  # публичный URL Render, например: https://tarot-bot.onrender.com
+WEBHOOK_PATH = "/webhook"        # путь, на который Telegram будет слать апдейты
 
-# Если хочешь, можешь потом вывести это в переменные окружения тоже
-CHANNEL_USERNAME = "@YourChannelUsername"          # юзернейм канала (для текста)
-CHANNEL_LINK = "https://t.me/YourChannelUsername"  # ссылка на канал
+CHANNEL_USERNAME = "@YourChannelUsername"
+CHANNEL_LINK = "https://t.me/YourChannelUsername"
 
-# Краткие расшифровки карт (6 штук под твой QR)
 CARDS = {
     "Sun": (
         "🌞 Солнце\n\n"
@@ -54,14 +45,15 @@ CARDS = {
     ),
 }
 
-# ---------- ОБРАБОТЧИК КОМАНДЫ /start ----------
+# ===== Flask-приложение =====
+
+flask_app = Flask(__name__)
+application: Application | None = None
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    chat = update.effective_chat
     args = context.args
 
-    # Определяем, какая карта пришла из параметра ?start=
     if args:
         card_key = args[0]
         text = CARDS.get(
@@ -75,12 +67,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "чтобы получить расшифровку."
         )
 
-    # Отправляем мини‑расшифровку
     await update.message.reply_text(text)
 
-    # Кнопки под раскладом:
-    # 1) Подписаться на канал (url)
-    # 2) Получать рассылки в ЛС (callback 'subscribe')
     keyboard = [
         [InlineKeyboardButton("📢 Подписаться на канал", url=CHANNEL_LINK)],
         [InlineKeyboardButton("🔔 Получать рассылки в ЛС", callback_data="subscribe")],
@@ -94,7 +82,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(info_text, reply_markup=reply_markup)
 
-# ---------- ОБРАБОТЧИК КНОПОК ----------
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -102,12 +89,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
 
     await query.answer()
-
-    # Лог для отладки
     print(f"Кнопка нажата! data={data}, user_id={user_id}")
 
     if data == "subscribe":
-        # Сохраняем user_id в файл для последующей рассылки
         try:
             with open("subs.txt", "a", encoding="utf-8") as f:
                 f.write(f"{user_id}\n")
@@ -119,22 +103,55 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Буду время от времени присылать вам расклады и подсказки в личку."
         )
 
-# ---------- ЗАПУСК БОТА ----------
+
+@flask_app.route("/", methods=["GET"])
+def index():
+    return "Bot is running."
+
+
+@flask_app.route(WEBHOOK_PATH, methods=["POST"])
+def webhook():
+    """Эндпоинт, куда Telegram шлёт апдейты."""
+    if application is None:
+        return "Application not ready", 500
+
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
+    return "OK"
+
+
+async def init_telegram_app():
+    global application
+
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN не задан")
+
+    if not BASE_URL:
+        raise RuntimeError("BASE_URL не задан")
+
+    application = Application.builder().token(BOT_TOKEN).updater(None).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button))
+
+    # Устанавливаем вебхук
+    webhook_url = BASE_URL.rstrip("/") + WEBHOOK_PATH
+    await application.bot.set_webhook(url=webhook_url)
+
+    await application.initialize()
+    await application.start()
+    print(f"Bot started with webhook {webhook_url}")
+
 
 def main():
-    if not BOT_TOKEN:
-        raise RuntimeError(
-            "Переменная окружения BOT_TOKEN не задана. "
-            "Установите её в настройках Render или локально перед запуском."
-        )
+    import asyncio
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    asyncio.run(init_telegram_app())
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
+    port = int(os.getenv("PORT", "10000"))
+    # Запуск Flask-сервера; он должен слушать порт для Render
+    flask_app.run(host="0.0.0.0", port=port)
 
-    print("Бот запущен...")
-    app.run_polling()
 
 if __name__ == "__main__":
     main()
