@@ -263,6 +263,22 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Когда вы вернётесь к боту, он уже будет видеть вас как подписчика "
             "в статистике (если подписка оформлена)."
         )
+    elif data == "st:menu":
+        # открыть админ‑меню по кнопке
+        if user_id not in ADMIN_IDS:
+            await query.edit_message_text("Эта функция только для администратора.")
+            return
+        keyboard = [
+            [InlineKeyboardButton("📊 Сегодня: все карты", callback_data="st:today:all")],
+            [InlineKeyboardButton("📊 Сегодня: по карте", callback_data="st:today:cards")],
+            [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
+            [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
+            [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
+        ]
+        await query.edit_message_text(
+            "Админ‑меню:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
     elif data.startswith("st:"):
         await handle_stats_callback(update, context, data)
 
@@ -285,6 +301,13 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Админ‑меню:",
         reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+    # отдельная «кнопка входа» в админ‑панель
+    entry_keyboard = [[InlineKeyboardButton("⚙ Открыть админ‑панель", callback_data="st:menu")]]
+    await update.message.reply_text(
+        "Кнопка для быстрого входа в админ‑панель:",
+        reply_markup=InlineKeyboardMarkup(entry_keyboard),
     )
 
 
@@ -475,8 +498,6 @@ async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = F
 
     bot = context.bot
     channel_id = CHANNEL_USERNAME
-
-    # если force=True — можно проверять всех юзеров, но для простоты берём только новых
     unique_ids = {r["user_id"] for r in new_rows}
     new_subs = set()
 
