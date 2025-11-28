@@ -15,8 +15,8 @@ PORT = int(os.getenv("PORT", "10000"))
 # Админы
 ADMIN_IDS = {457388809, 8089136347}
 
-CHANNEL_USERNAME = "@YourChannelUsername"
-CHANNEL_LINK = "https://t.me/YourChannelUsername"
+CHANNEL_USERNAME = "@tatiataro"
+CHANNEL_LINK = "https://t.me/tatiataro"
 
 USERS_CSV = "users.csv"
 
@@ -248,3 +248,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
