@@ -1,6 +1,6 @@
 import os
 import csv
-from datetime import datetime
+from datetime import datetime, UTC
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -13,9 +13,10 @@ from telegram.constants import ParseMode
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
 
-# Админы
+# Админы бота
 ADMIN_IDS = {457388809, 8089136347}
 
+# Канал
 CHANNEL_USERNAME = "@tatiataro"
 CHANNEL_LINK = "https://t.me/tatiataro"
 
@@ -54,7 +55,6 @@ CARDS = {
     ),
 }
 
-
 # ===== утилиты для CSV =====
 
 def ensure_csv_exists():
@@ -74,8 +74,7 @@ def ensure_csv_exists():
 def log_start(user_id: int, username: str | None,
               first_name: str | None, card_key: str | None):
     ensure_csv_exists()
-    # Можно оставить так, предупреждение игнорируем
-    date_iso = datetime.utcnow().isoformat(timespec="seconds")
+    date_iso = datetime.now(UTC).isoformat(timespec="seconds")
     row = [
         user_id,
         username or "",
@@ -89,7 +88,8 @@ def log_start(user_id: int, username: str | None,
         writer.writerow(row)
 
 
-def mark_subscribed(user_id: int):
+def update_subscribed_flag(user_id: int, is_sub: bool):
+    """Обновляет флаг subscribed в CSV по user_id."""
     if not os.path.exists(USERS_CSV):
         return
 
@@ -99,10 +99,13 @@ def mark_subscribed(user_id: int):
         for r in reader:
             rows.append(r)
 
+    if not rows:
+        return
+
     # первая строка — хедер
     for i in range(1, len(rows)):
         if str(rows[i][0]) == str(user_id):
-            rows[i][5] = "sub"
+            rows[i][5] = "sub" if is_sub else "unsub"
 
     with open(USERS_CSV, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -123,6 +126,8 @@ def load_users():
 
 def esc_md2(text: str) -> str:
     """Экранирование под MarkdownV2."""
+    if text is None:
+        return ""
     chars = r'_*[]()~`>#+-=|{}.!'
     for ch in chars:
         text = text.replace(ch, "\\" + ch)
@@ -187,11 +192,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if data == "subscribe":
-        mark_subscribed(user_id)
-
+        # здесь больше не меняем CSV, статус берём из канала
         await query.edit_message_text(
-            "✅ Вы добавлены в список рассылки.\n"
-            "Буду время от времени присылать вам расклады и подсказки в личку."
+            "✅ Откройте канал и убедитесь, что вы на него подписаны.\n"
+            "Статус в отчёте обновится при следующем просмотре статистики."
         )
 
 
@@ -206,6 +210,30 @@ async def qr_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Пока нет данных по переходам.")
         return
 
+    bot = context.bot
+    channel_id = CHANNEL_USERNAME  # бот должен быть админом канала
+
+    # сначала собираем уникальные user_id из лога
+    unique_ids = {row["user_id"] for row in users}
+
+    # для каждого юзера спрашиваем реальный статус в канале
+    real_status: dict[str, str] = {}
+    for uid in unique_ids:
+        try:
+            cm = await bot.get_chat_member(chat_id=channel_id, user_id=int(uid))
+            # creator / administrator / member = подписан, left / kicked = нет [web:187][web:197]
+            if cm.status in ("creator", "administrator", "member"):
+                real_status[uid] = "sub"
+                update_subscribed_flag(int(uid), True)
+            else:
+                real_status[uid] = "unsub"
+                update_subscribed_flag(int(uid), False)
+        except Exception as e:
+            print(f"get_chat_member error for {uid}: {e}")
+            real_status[uid] = "unsub"
+            update_subscribed_flag(int(uid), False)
+
+    # формируем строки отчёта
     lines = []
     for row in users:
         uid = row["user_id"]
@@ -213,7 +241,7 @@ async def qr_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         first_name = row["first_name"]
         card_key = row["card_key"]
         date_iso = row["date_iso"]
-        status = row["subscribed"]  # sub / unsub
+        status = real_status.get(uid, "unsub")
 
         if username:
             link = esc_md2("@" + username)
@@ -227,10 +255,11 @@ async def qr_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         lines.append(line)
 
-    text = "Отчёт по переходам:\n\n" + "\n".join(lines)
+    header = esc_md2("Отчёт по переходам:")
+    text = header + "\n\n" + "\n".join(lines)
 
     await update.message.reply_text(
-        esc_md2("Отчёт по переходам:") + "\n\n" + "\n".join(lines),
+        text,
         parse_mode=ParseMode.MARKDOWN_V2,
         disable_web_page_preview=True,
     )
