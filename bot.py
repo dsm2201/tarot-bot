@@ -1,7 +1,9 @@
 import os
 import csv
+import json
 from datetime import datetime, UTC, timedelta
 from collections import defaultdict
+import random
 
 from telegram import (
     Update,
@@ -29,77 +31,23 @@ CHANNEL_LINK = "https://t.me/tatiataro"
 
 USERS_CSV = "users.csv"
 LAST_REPORT_FILE = "last_report_ts.txt"
+NURTURE_LOG_CSV = "nurture_log.csv"
 
-# ==== 6 карт под воронку новых клиентов ====
-CARDS = {
-    "Magician": (
-        "🪄 Маг\n\n"
-        "Сейчас перед вами открывается окно возможностей, которое бывает нечасто. "
-        "Маг указывает, что у вас уже есть всё, чтобы сдвинуть важную тему с мёртвой точки — "
-        "нужно лишь собрать волю, знания и ресурсы в одну линию.\n\n"
-        "Эта карта часто выпадает тем, кто стоит на пороге нового этапа: смена работы, запуск дела, "
-        "личная трансформация или выход из затянувшегося застоя. "
-        "Если вы чувствуете, что \"давно пора\", но всё никак не начинается — это прямой знак во Вселенную.\n\n"
-        "В канале {channel} разбираются такие состояния подробнее: как не слить импульс Мага в прокрастинацию, "
-        "и во что именно сейчас лучше вложить свою энергию, чтобы не пожалеть о выборе."
-    ).format(channel=CHANNEL_USERNAME),
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEXTS_DIR = os.path.join(BASE_DIR, "texts")
 
-    "HighPriestess": (
-        "🌙 Верховная Жрица\n\n"
-        "Сейчас снаружи может быть мало ясности, но внутри у вас уже есть ответы. "
-        "Жрица приходит, когда разуму не хватает данных, а интуиция шепчет своё — и часто оказывается права.\n\n"
-        "Карта говорит о скрытых процессах, тайных мотивах людей и ситуациях, где нельзя действовать в лоб. "
-        "Это период, когда главное — настроиться на себя, ловить знаки и не разбрасываться своей энергией.\n\n"
-        "В канале {channel} есть практики и разборы, которые помогают лучше слышать себя, "
-        "отделять истинное чувство от тревожных фантазий и выбирать путь без ощущения, что \"иду вслепую\"."
-    ).format(channel=CHANNEL_USERNAME),
+def load_json(name):
+    path = os.path.join(TEXTS_DIR, name)
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-    "Empress": (
-        "🌿 Императрица\n\n"
-        "Императрица — символ изобилия, роста и здоровой самоценности. "
-        "Она появляется там, где важно наконец-то позволить себе больше: внимания, денег, удовольствий, "
-        "заботы о теле и красоте жизни.\n\n"
-        "Эта карта часто указывает на плодородную почву: идеи, отношения или проекты, которые при правильном "
-        "уходе могут дать очень щедрый урожай. Вопрос только в том, позволите ли вы себе принять это.\n\n"
-        "В канале {channel} много про то, как выходить из сценариев \"мне нельзя\", \"я недостойна\" "
-        "и перестраивать реальность под себя, а не под чужие ожидания."
-    ).format(channel=CHANNEL_USERNAME),
-
-    "Lovers": (
-        "💞 Влюблённые\n\n"
-        "Карта Влюблённых почти никогда не про простой выбор — она про выбор, который влияет на вашу линию судьбы. "
-        "Здесь переплетены темы отношений, партнёрства, доверия и верности себе.\n\n"
-        "Сейчас может обостряться вопрос: с кем я иду дальше, во что вкладываю сердце и время, "
-        "и где я предаю себя ради чужого спокойствия. Эта карта мягко, но настойчиво подталкивает к честности.\n\n"
-        "В канале {channel} разбираются истории про выбор в любви и не только: как не застрять в старых связях, "
-        "узнавать \"своих\" людей и не терять себя, даже если очень тянет в отношения."
-    ).format(channel=CHANNEL_USERNAME),
-
-    "Star": (
-        "⭐ Звезда\n\n"
-        "Звезда приходит тогда, когда внутри уже было непросто — и показывает, что полоса начинает меняться. "
-        "Это карта тихой надежды, восстановления и медленного, но верного выхода к своему пути.\n\n"
-        "Сейчас важно не гнать события, а настроиться на тот вектор, который действительно ваш. "
-        "Звезда часто указывает на долгосрочные мечты, которые вы давно откладывали \"на потом\", "
-        "и даёт знак: время осторожно, по шагам, возвращаться к ним.\n\n"
-        "В канале {channel} вы найдёте расклады и подсказки для тех, кто выбирается из выгорания, "
-        "ищет своё дело или просто хочет снова почувствовать, что жизнь не ограничивается выживанием."
-    ).format(channel=CHANNEL_USERNAME),
-
-    "Sun": (
-        "🌞 Солнце\n\n"
-        "Солнце — одна из самых сильных карт ясности и жизненной энергии. "
-        "Оно высвечивает правду, усиливает ваши сильные стороны и помогает выйти из режима сомнений в режим действия.\n\n"
-        "Сейчас может складываться ситуация, где вы наконец-то получаете подтверждение: вы на верном пути, "
-        "и можно смелее заявлять о себе, своих талантах и желаниях. Главное — не спрятаться обратно в тень.\n\n"
-        "В канале {channel} есть расклады про личную силу, самореализацию и то, как не обесценивать свои успехи, "
-        "даже если кажется, что \"этого всё ещё мало\"."
-    ).format(channel=CHANNEL_USERNAME),
-}
+CARDS = load_json("cards.json")
+NURTURE_UNSUB = load_json("nurture_unsub.json")
+NURTURE_SUB = load_json("nurture_sub.json")
 
 CARD_KEYS = list(CARDS.keys())
 
-# ===== утилиты =====
+# ===== утилиты CSV и дат =====
 
 def ensure_csv_exists():
     if not os.path.exists(USERS_CSV):
@@ -111,7 +59,22 @@ def ensure_csv_exists():
                 "first_name",
                 "card_key",
                 "date_iso",
-                "subscribed",
+                "subscribed"
+            ])
+
+def ensure_nurture_log_exists():
+    if not os.path.exists(NURTURE_LOG_CSV):
+        with open(NURTURE_LOG_CSV, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "user_id",
+                "card_key",
+                "segment",          # unsub / sub
+                "day_num",          # 1,3,7,14...
+                "sent_at",
+                "status",           # ok / error
+                "error_msg",
+                "subscribed_after"  # yes / no / ""
             ])
 
 
@@ -198,6 +161,65 @@ def save_last_report_ts(ts: datetime):
         f.write(ts.isoformat(timespec="seconds"))
 
 
+# ===== nurture‑лог =====
+
+def log_nurture_event(user_id: int, card_key: str, segment: str,
+                      day_num: int, status: str, error_msg: str = ""):
+    ensure_nurture_log_exists()
+    sent_at = datetime.now(UTC).isoformat(timespec="seconds")
+    row = [
+        str(user_id),
+        card_key,
+        segment,
+        str(day_num),
+        sent_at,
+        status,
+        error_msg,
+        ""  # subscribed_after
+    ]
+    with open(NURTURE_LOG_CSV, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(row)
+
+
+def update_nurture_subscribed_after():
+    """Обновляет поле subscribed_after в nurture_log.csv на основе текущего статуса."""
+    if not os.path.exists(NURTURE_LOG_CSV):
+        return
+    if not os.path.exists(USERS_CSV):
+        return
+
+    # загрузим статусы подписки
+    users = load_users()
+    sub_map = {row["user_id"]: row["subscribed"] for row in users}
+
+    rows = []
+    with open(NURTURE_LOG_CSV, "r", newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for r in reader:
+            rows.append(r)
+
+    if not rows:
+        return
+
+    header = rows[0]
+    # индексы
+    idx_user = header.index("user_id")
+    idx_sub_after = header.index("subscribed_after")
+
+    for i in range(1, len(rows)):
+        uid = rows[i][idx_user]
+        if rows[i][idx_sub_after]:
+            # уже заполнено, не трогаем
+            continue
+        status = sub_map.get(uid, "unsub")
+        rows[i][idx_sub_after] = "yes" if status == "sub" else "no"
+
+    with open(NURTURE_LOG_CSV, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerows(rows)
+
+
 # ===== клиентские хендлеры =====
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -207,13 +229,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
     card_key = args[0] if args else ""
-    if card_key:
-        text = CARDS.get(
-            card_key,
+    if card_key and card_key in CARDS:
+        card = CARDS[card_key]
+        text = f"{card['title']}\n\n" + card["body"].format(channel=CHANNEL_USERNAME)
+    elif card_key:
+        text = (
             "Для этой карты пока нет расшифровки, но вы можете заглянуть в канал {channel} "
             "и найти подсказки для своей ситуации там."
-            .format(channel=CHANNEL_USERNAME)
-        )
+        ).format(channel=CHANNEL_USERNAME)
     else:
         text = (
             "Привет! Это бот с таро‑мини‑раскладами по QR‑коду.\n\n"
@@ -264,7 +287,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "в статистике (если подписка оформлена)."
         )
     elif data == "st:menu":
-        # открыть админ‑меню по кнопке
         if user_id not in ADMIN_IDS:
             await query.edit_message_text("Эта функция только для администратора.")
             return
@@ -274,6 +296,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
             [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
             [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
+            [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")]
         ]
         await query.edit_message_text(
             "Админ‑меню:",
@@ -297,13 +320,13 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
         [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
         [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
+        [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")]
     ]
     await update.message.reply_text(
         "Админ‑меню:",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
-    # отдельная «кнопка входа» в админ‑панель
     entry_keyboard = [[InlineKeyboardButton("⚙ Открыть админ‑панель", callback_data="st:menu")]]
     await update.message.reply_text(
         "Кнопка для быстрого входа в админ‑панель:",
@@ -318,11 +341,20 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("Эта функция только для администратора.")
         return
 
-    parts = data.split(":")  # st:...
+    parts = data.split(":")
     action = parts[1]
 
     if action == "export":
         await send_csv_file(query)
+        return
+
+    if action == "nurture":
+        text = build_nurture_stats(days=7)
+        await query.edit_message_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            disable_web_page_preview=True,
+        )
         return
 
     if action == "today" and parts[2] == "cards":
@@ -449,6 +481,59 @@ async def build_stats_text(context: ContextTypes.DEFAULT_TYPE,
     return "\n".join(lines)
 
 
+def build_nurture_stats(days: int = 7) -> str:
+    """Краткий отчёт по nurture за последние N дней на основе nurture_log.csv."""
+    if not os.path.exists(NURTURE_LOG_CSV):
+        return esc_md2("Лог автоворонки пока пуст.")
+
+    now = datetime.now(UTC)
+    since = now - timedelta(days=days)
+
+    with open(NURTURE_LOG_CSV, "r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = [r for r in reader]
+
+    if not rows:
+        return esc_md2("Лог автоворонки пока пуст.")
+
+    total_sent = 0
+    by_segment = defaultdict(int)
+    by_segment_conv = defaultdict(int)  # кол-во с subscribed_after=yes
+    by_day_segment = defaultdict(int)
+
+    for r in rows:
+        sent_at = parse_iso(r["sent_at"])
+        if sent_at is None or sent_at < since:
+            continue
+        total_sent += 1
+        seg = r["segment"]
+        day_num = r["day_num"]
+        by_segment[seg] += 1
+        key = f"{seg}_day_{day_num}"
+        by_day_segment[key] += 1
+        if r.get("subscribed_after") == "yes":
+            by_segment_conv[seg] += 1
+
+    if total_sent == 0:
+        return esc_md2(f"За последние {days} дней nurture‑сообщений не отправлялось.")
+
+    lines = []
+    lines.append(esc_md2(f"Автоворонка за последние {days} дней"))
+    lines.append("")
+    lines.append(esc_md2(f"Всего отправлено сообщений: {total_sent}"))
+    for seg in ("unsub", "sub"):
+        if by_segment[seg]:
+            conv = round(by_segment_conv[seg] / by_segment[seg] * 100, 1) if by_segment[seg] > 0 else 0
+            lines.append(esc_md2(f"{seg}: отправлено {by_segment[seg]}, подписалось после: {by_segment_conv[seg]} ({conv}%)"))
+
+    lines.append("")
+    lines.append(esc_md2("По шагам воронки:"))
+    for key in sorted(by_day_segment.keys()):
+        lines.append(esc_md2(f"{key}: {by_day_segment[key]}"))
+
+    return "\n".join(lines)
+
+
 async def send_csv_file(query):
     if not os.path.exists(USERS_CSV):
         await query.edit_message_text("Файл статистики пока не создан.")
@@ -462,7 +547,7 @@ async def send_csv_file(query):
     await query.edit_message_reply_markup(reply_markup=None)
 
 
-# ===== авто‑уведомления =====
+# ===== авто‑уведомления для админа =====
 
 async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
     now = datetime.now(UTC)
@@ -549,6 +634,93 @@ async def debug_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await notify_admins_once(context, force=True)
 
 
+# ===== автоворонка nurture (sub / unsub) =====
+
+async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
+    """
+    Ежедневная джоба: проходит по пользователям,
+    считает дни с момента первого захода и шлёт сообщения
+    из NURTURE_UNSUB / NURTURE_SUB для нужных дней.
+    Плюс обновляет subscribed_after в логе.
+    """
+    users = load_users()
+    if not users:
+        return
+
+    now = datetime.now(UTC)
+    bot = context.bot
+    channel_id = CHANNEL_USERNAME
+
+    by_user = {}
+    for row in users:
+        uid = row["user_id"]
+        dt = parse_iso(row["date_iso"])
+        if dt is None:
+            continue
+        if uid not in by_user:
+            by_user[uid] = {
+                "first_dt": dt,
+                "last_row": row,
+            }
+        else:
+            if dt < by_user[uid]["first_dt"]:
+                by_user[uid]["first_dt"] = dt
+            if dt > parse_iso(by_user[uid]["last_row"]["date_iso"]):
+                by_user[uid]["last_row"] = row
+
+    for uid, info in by_user.items():
+        first_dt = info["first_dt"]
+        row = info["last_row"]
+        card_key = row["card_key"]
+        if not card_key or card_key not in CARD_KEYS:
+            continue
+
+        days = (now.date() - first_dt.date()).days
+
+        # актуальный статус подписки
+        try:
+            cm = await bot.get_chat_member(chat_id=channel_id, user_id=int(uid))
+            is_sub = cm.status in ("creator", "administrator", "member")
+            update_subscribed_flag(int(uid), is_sub)
+        except Exception as e:
+            print(f"nurture get_chat_member error for {uid}: {e}")
+            is_sub = False
+            update_subscribed_flag(int(uid), False)
+
+        # unsub: дни 1, 3, 7
+        if not is_sub and days in (1, 3, 7):
+            day_num = days
+            day_key = f"day_{days}"
+            texts = NURTURE_UNSUB.get(card_key, {})
+            msg_template = texts.get(day_key)
+            if msg_template:
+                text = msg_template.format(channel=CHANNEL_USERNAME)
+                try:
+                    await bot.send_message(chat_id=int(uid), text=text)
+                    log_nurture_event(int(uid), card_key, "unsub", day_num, "ok")
+                except Exception as e:
+                    print(f"nurture unsub send error to {uid}: {e}")
+                    log_nurture_event(int(uid), card_key, "unsub", day_num, "error", str(e))
+
+        # sub: дни 3, 7, 14
+        if is_sub and days in (3, 7, 14):
+            day_num = days
+            day_key = f"day_{days}"
+            texts = NURTURE_SUB.get(card_key, {})
+            msg_template = texts.get(day_key)
+            if msg_template:
+                text = msg_template.format(channel=CHANNEL_USERNAME)
+                try:
+                    await bot.send_message(chat_id=int(uid), text=text)
+                    log_nurture_event(int(uid), card_key, "sub", day_num, "ok")
+                except Exception as e:
+                    print(f"nurture sub send error to {uid}: {e}")
+                    log_nurture_event(int(uid), card_key, "sub", day_num, "error", str(e))
+
+    # после рассылки обновим subscribed_after во всём логе
+    update_nurture_subscribed_after()
+
+
 # ===== входная точка =====
 
 def main():
@@ -569,10 +741,17 @@ def main():
         raise RuntimeError("BASE_URL не задан")
 
     job_queue = app.job_queue
+    # автоуведомление админу каждые 30 минут
     job_queue.run_repeating(
         notify_admins,
-        interval=1800,  # 30 минут
+        interval=1800,
         first=300,
+    )
+    # автоворонка nurture раз в сутки
+    job_queue.run_repeating(
+        nurture_job,
+        interval=24 * 3600,
+        first=600,
     )
 
     app.run_webhook(
