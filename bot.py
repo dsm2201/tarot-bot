@@ -8,6 +8,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
 )
+from telegram.constants import ParseMode
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
@@ -73,6 +74,7 @@ def ensure_csv_exists():
 def log_start(user_id: int, username: str | None,
               first_name: str | None, card_key: str | None):
     ensure_csv_exists()
+    # Можно оставить так, предупреждение игнорируем
     date_iso = datetime.utcnow().isoformat(timespec="seconds")
     row = [
         user_id,
@@ -119,6 +121,14 @@ def load_users():
     return users
 
 
+def esc_md2(text: str) -> str:
+    """Экранирование под MarkdownV2."""
+    chars = r'_*[]()~`>#+-=|{}.!'
+    for ch in chars:
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
 # ===== хендлеры =====
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -128,14 +138,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
     card_key = args[0] if args else ""
-    text = CARDS.get(
-        card_key,
-        "Карта по этой ссылке не найдена 🤔\nПопробуйте другой QR-код или ссылку."
-    ) if card_key else (
-        "Привет! Это бот с таро‑мини‑раскладами по QR‑коду.\n\n"
-        "Отсканируйте QR на карте или перейдите по ссылке из поста, "
-        "чтобы получить расшифровку."
-    )
+    if card_key:
+        text = CARDS.get(
+            card_key,
+            "Карта по этой ссылке не найдена 🤔\nПопробуйте другой QR-код или ссылку."
+        )
+    else:
+        text = (
+            "Привет! Это бот с таро‑мини‑раскладами по QR‑коду.\n\n"
+            "Отсканируйте QR на карте или перейдите по ссылке из поста, "
+            "чтобы получить расшифровку."
+        )
 
     # логируем переход
     log_start(
@@ -193,7 +206,6 @@ async def qr_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Пока нет данных по переходам.")
         return
 
-    # собираем строки отчёта
     lines = []
     for row in users:
         uid = row["user_id"]
@@ -203,19 +215,23 @@ async def qr_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date_iso = row["date_iso"]
         status = row["subscribed"]  # sub / unsub
 
-        # кликабельный юзер: username, если есть, иначе по ID
         if username:
-            link = f"@{username}"
+            link = esc_md2("@" + username)
         else:
-            link = f"[{first_name or 'user'}](tg://user?id={uid})"  # Markdown‑ссылка [web:160][web:167]
+            name = esc_md2(first_name or "user")
+            link = f"[{name}](tg://user?id={uid})"
 
-        lines.append(f"{link} — {card_key or '-'} — {date_iso} — {status}")
+        line = (
+            f"{link} — {esc_md2(card_key or '-')}"
+            f" — {esc_md2(date_iso)} — {esc_md2(status)}"
+        )
+        lines.append(line)
 
     text = "Отчёт по переходам:\n\n" + "\n".join(lines)
 
     await update.message.reply_text(
-        text,
-        parse_mode="Markdown",
+        esc_md2("Отчёт по переходам:") + "\n\n" + "\n".join(lines),
+        parse_mode=ParseMode.MARKDOWN_V2,
         disable_web_page_preview=True,
     )
 
@@ -232,8 +248,7 @@ def main():
 
     print(">>> Starting bot with built‑in webhook server")
 
-    # BASE_URL надо задать в Environment, как раньше:
-    base_url = os.getenv("BASE_URL")
+    base_url = os.getenv("BASE_URL")  # например https://tarot-bot-1-i003.onrender.com
     if not base_url:
         raise RuntimeError("BASE_URL не задан")
 
@@ -241,11 +256,10 @@ def main():
         listen="0.0.0.0",
         port=PORT,
         url_path="",
-        webhook_url=base_url,   # например https://tarot-bot-1-i003.onrender.com
+        webhook_url=base_url,
         allowed_updates=None,
     )
 
 
 if __name__ == "__main__":
     main()
-
