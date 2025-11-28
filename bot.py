@@ -1,4 +1,6 @@
 import os
+import csv
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -8,11 +10,15 @@ from telegram.ext import (
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-PORT = int(os.getenv("PORT", "10000"))  # Render сам прокидывает порт
+PORT = int(os.getenv("PORT", "10000"))
 
+# Админы
+ADMIN_IDS = {457388809, 8089136347}
 
 CHANNEL_USERNAME = "@YourChannelUsername"
 CHANNEL_LINK = "https://t.me/YourChannelUsername"
+
+USERS_CSV = "users.csv"
 
 CARDS = {
     "Sun": (
@@ -48,22 +54,96 @@ CARDS = {
 }
 
 
+# ===== утилиты для CSV =====
+
+def ensure_csv_exists():
+    if not os.path.exists(USERS_CSV):
+        with open(USERS_CSV, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "user_id",
+                "username",
+                "first_name",
+                "card_key",
+                "date_iso",
+                "subscribed",
+            ])
+
+
+def log_start(user_id: int, username: str | None,
+              first_name: str | None, card_key: str | None):
+    ensure_csv_exists()
+    date_iso = datetime.utcnow().isoformat(timespec="seconds")
+    row = [
+        user_id,
+        username or "",
+        first_name or "",
+        card_key or "",
+        date_iso,
+        "unsub",
+    ]
+    with open(USERS_CSV, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(row)
+
+
+def mark_subscribed(user_id: int):
+    if not os.path.exists(USERS_CSV):
+        return
+
+    rows = []
+    with open(USERS_CSV, "r", newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for r in reader:
+            rows.append(r)
+
+    # первая строка — хедер
+    for i in range(1, len(rows)):
+        if str(rows[i][0]) == str(user_id):
+            rows[i][5] = "sub"
+
+    with open(USERS_CSV, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerows(rows)
+
+
+def load_users():
+    if not os.path.exists(USERS_CSV):
+        return []
+
+    users = []
+    with open(USERS_CSV, "r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            users.append(row)
+    return users
+
+
+# ===== хендлеры =====
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(">>> /start handler called, update_id:", update.update_id)
+
+    user = update.effective_user
     args = context.args
 
-    if args:
-        card_key = args[0]
-        text = CARDS.get(
-            card_key,
-            "Карта по этой ссылке не найдена 🤔\nПопробуйте другой QR-код или ссылку."
-        )
-    else:
-        text = (
-            "Привет! Это бот с таро‑мини‑раскладами по QR‑коду.\n\n"
-            "Отсканируйте QR на карте или перейдите по ссылке из поста, "
-            "чтобы получить расшифровку."
-        )
+    card_key = args[0] if args else ""
+    text = CARDS.get(
+        card_key,
+        "Карта по этой ссылке не найдена 🤔\nПопробуйте другой QR-код или ссылку."
+    ) if card_key else (
+        "Привет! Это бот с таро‑мини‑раскладами по QR‑коду.\n\n"
+        "Отсканируйте QR на карте или перейдите по ссылке из поста, "
+        "чтобы получить расшифровку."
+    )
+
+    # логируем переход
+    log_start(
+        user_id=user.id,
+        username=user.username,
+        first_name=user.first_name,
+        card_key=card_key,
+    )
 
     if update.message:
         await update.message.reply_text(text)
@@ -76,7 +156,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         info_text = (
             f"Если откликается расклад — можете подписаться на канал {CHANNEL_USERNAME} "
-            "и/или получать персональные раскладки и полезные подсказки в личку."
+            "и/или получать персональные расклады и полезные подсказки в личку."
         )
 
         await update.message.reply_text(info_text, reply_markup=reply_markup)
@@ -94,11 +174,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if data == "subscribe":
-        try:
-            with open("subs.txt", "a", encoding="utf-8") as f:
-                f.write(f"{user_id}\n")
-        except Exception as e:
-            print(f"Ошибка записи в subs.txt: {e}")
+        mark_subscribed(user_id)
 
         await query.edit_message_text(
             "✅ Вы добавлены в список рассылки.\n"
@@ -106,29 +182,69 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def qr_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text("Эта команда только для администратора.")
+        return
+
+    users = load_users()
+    if not users:
+        await update.message.reply_text("Пока нет данных по переходам.")
+        return
+
+    # собираем строки отчёта
+    lines = []
+    for row in users:
+        uid = row["user_id"]
+        username = row["username"]
+        first_name = row["first_name"]
+        card_key = row["card_key"]
+        date_iso = row["date_iso"]
+        status = row["subscribed"]  # sub / unsub
+
+        # кликабельный юзер: username, если есть, иначе по ID
+        if username:
+            link = f"@{username}"
+        else:
+            link = f"[{first_name or 'user'}](tg://user?id={uid})"  # Markdown‑ссылка [web:160][web:167]
+
+        lines.append(f"{link} — {card_key or '-'} — {date_iso} — {status}")
+
+    text = "Отчёт по переходам:\n\n" + "\n".join(lines)
+
+    await update.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+    )
+
+
 def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN не задан")
-
-    # Твой https‑домен Render, можно взять из Overview
-    base_url = os.getenv("BASE_URL", "https://tarot-bot-1-i003.onrender.com")
 
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(CommandHandler("qr_stats", qr_stats))
 
     print(">>> Starting bot with built‑in webhook server")
+
+    # BASE_URL надо задать в Environment, как раньше:
+    base_url = os.getenv("BASE_URL")
+    if not base_url:
+        raise RuntimeError("BASE_URL не задан")
 
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path="",                      # путь, пусть будет корень
-        webhook_url=base_url,             # ВАЖНО: полный https‑URL
+        url_path="",
+        webhook_url=base_url,   # например https://tarot-bot-1-i003.onrender.com
         allowed_updates=None,
     )
 
 
 if __name__ == "__main__":
     main()
-
