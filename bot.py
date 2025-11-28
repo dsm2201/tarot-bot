@@ -3,7 +3,6 @@ import csv
 import json
 from datetime import datetime, UTC, timedelta
 from collections import defaultdict
-import random
 
 from telegram import (
     Update,
@@ -189,7 +188,6 @@ def update_nurture_subscribed_after():
     if not os.path.exists(USERS_CSV):
         return
 
-    # загрузим статусы подписки
     users = load_users()
     sub_map = {row["user_id"]: row["subscribed"] for row in users}
 
@@ -203,14 +201,12 @@ def update_nurture_subscribed_after():
         return
 
     header = rows[0]
-    # индексы
     idx_user = header.index("user_id")
     idx_sub_after = header.index("subscribed_after")
 
     for i in range(1, len(rows)):
         uid = rows[i][idx_user]
         if rows[i][idx_sub_after]:
-            # уже заполнено, не трогаем
             continue
         status = sub_map.get(uid, "unsub")
         rows[i][idx_sub_after] = "yes" if status == "sub" else "no"
@@ -295,6 +291,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📊 Сегодня: по карте", callback_data="st:today:cards")],
             [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
             [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
+            [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
             [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
             [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")]
         ]
@@ -319,6 +316,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📊 Сегодня: по карте", callback_data="st:today:cards")],
         [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
         [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
+        [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
         [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
         [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")]
     ]
@@ -379,6 +377,10 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         end_dt = y.replace(hour=23, minute=59, second=59, microsecond=0)
     elif action == "7days":
         start_dt = now - timedelta(days=7)
+        end_dt = now
+    elif action == "alltime":
+        # очень ранняя дата как начало
+        start_dt = datetime(2000, 1, 1, tzinfo=UTC)
         end_dt = now
     else:
         await query.edit_message_text("Неизвестное действие.")
@@ -478,6 +480,28 @@ async def build_stats_text(context: ContextTypes.DEFAULT_TYPE,
         conv = round(s / c * 100, 1) if c > 0 else 0
         lines.append(esc_md2(f"{ck}: переходов {c}, подписчиков {s}, конверсия {conv}%"))
 
+    # детальный список пользователей
+    lines.append("")
+    lines.append(esc_md2("Список пользователей:"))
+
+    # сортируем по времени
+    filtered_sorted = sorted(filtered, key=lambda r: r["date_iso"])
+
+    for row in filtered_sorted:
+        uid = row["user_id"]
+        username = row["username"] or ""
+        card = row["card_key"] or "-"
+        date_iso = row["date_iso"]
+        status = real_status.get(uid, row.get("subscribed", "unsub"))
+
+        if username:
+            name_part = f"@{username}"
+        else:
+            name_part = f"id{uid}"
+
+        line = f"{name_part} — {card} — {date_iso} — {status}"
+        lines.append(esc_md2(line))
+
     return "\n".join(lines)
 
 
@@ -498,7 +522,7 @@ def build_nurture_stats(days: int = 7) -> str:
 
     total_sent = 0
     by_segment = defaultdict(int)
-    by_segment_conv = defaultdict(int)  # кол-во с subscribed_after=yes
+    by_segment_conv = defaultdict(int)
     by_day_segment = defaultdict(int)
 
     for r in rows:
@@ -613,7 +637,7 @@ async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = F
 
     for admin_id in ADMIN_IDS:
         try:
-            await bot.send_message(chat_id=admin_id, text=text)
+            await context.bot.send_message(chat_id=admin_id, text=text)
         except Exception as e:
             print(f"notify_admins_once send error to {admin_id}: {e}")
 
@@ -677,7 +701,6 @@ async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
 
         days = (now.date() - first_dt.date()).days
 
-        # актуальный статус подписки
         try:
             cm = await bot.get_chat_member(chat_id=channel_id, user_id=int(uid))
             is_sub = cm.status in ("creator", "administrator", "member")
@@ -717,7 +740,6 @@ async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
                     print(f"nurture sub send error to {uid}: {e}")
                     log_nurture_event(int(uid), card_key, "sub", day_num, "error", str(e))
 
-    # после рассылки обновим subscribed_after во всём логе
     update_nurture_subscribed_after()
 
 
@@ -741,13 +763,11 @@ def main():
         raise RuntimeError("BASE_URL не задан")
 
     job_queue = app.job_queue
-    # автоуведомление админу каждые 30 минут
     job_queue.run_repeating(
         notify_admins,
         interval=1800,
         first=300,
     )
-    # автоворонка nurture раз в сутки
     job_queue.run_repeating(
         nurture_job,
         interval=24 * 3600,
