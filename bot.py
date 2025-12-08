@@ -36,6 +36,7 @@ NURTURE_LOG_CSV = "nurture_log.csv"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEXTS_DIR = os.path.join(BASE_DIR, "texts")
 META_CARDS_DIR = os.path.join(BASE_DIR, "meta_cards")
+DICE_DIR = os.path.join(BASE_DIR, "dice")
 
 def load_json(name):
     path = os.path.join(TEXTS_DIR, name)
@@ -189,6 +190,35 @@ async def send_random_meta_card(update: Update, context: ContextTypes.DEFAULT_TY
             photo=f,
             caption="🃏 Ваша метафорическая карта на сегодня",
         )
+
+async def send_random_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # находим чат (учитываем, что это может быть callback)
+    chat = update.effective_chat
+    if chat is None and update.callback_query:
+        chat = update.callback_query.message.chat
+
+    if chat is None:
+        return
+
+    # собираем список jpg/jpeg в папке dice
+    files = []
+    for name in os.listdir(DICE_DIR):
+        lower = name.lower()
+        if lower.endswith(".jpg") or lower.endswith(".jpeg"):
+            files.append(os.path.join(DICE_DIR, name))
+
+    if not files:
+        await chat.send_message("Кубик пока не положили в папку dice.")
+        return
+
+    import random
+    path = random.choice(files)
+
+    with open(path, "rb") as f:
+        await chat.send_photo(
+            photo=f,
+            caption="🎲 Кубик выбор",
+        )
 # ===== nurture‑лог =====
 
 def log_nurture_event(user_id: int, card_key: str, segment: str,
@@ -283,6 +313,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📢 Перейти в канал", url=CHANNEL_LINK)],
             [InlineKeyboardButton("🔔 Получать подсказки в ЛС", callback_data="subscribe")],
             [InlineKeyboardButton("🃏 Метафорическая карта на сегодня", callback_data="meta_card_today")],
+            [InlineKeyboardButton("🎲 Кубик выбора на сегодня", callback_data="dice_today")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -313,7 +344,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "в статистике (если подписка оформлена)."
         )
     elif data == "meta_card_today":
-        await send_random_meta_card(update, context)       
+        await send_random_meta_card(update, context)
+    elif data == "dice_today":
+        await send_random_dice(update, context)   
     elif data == "st:menu":
         if user_id not in ADMIN_IDS:
             await query.edit_message_text("Эта функция только для администратора.")
@@ -817,4 +850,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
