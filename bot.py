@@ -2,7 +2,7 @@ import os
 import random
 import csv
 import json
-from datetime import datetime, UTC, timedelta
+from datetime import datetime, UTC, timedelta, time
 from collections import defaultdict
 
 from telegram import (
@@ -162,6 +162,56 @@ def save_last_report_ts(ts: datetime):
     with open(LAST_REPORT_FILE, "w", encoding="utf-8") as f:
         f.write(ts.isoformat(timespec="seconds"))
 
+# ===== лимиты попыток на день =====
+
+def _normalize_daily_counters(user_data: dict):
+    """Сбрасывает счётчики на новый день и гарантирует наличие ключей."""
+    today = datetime.now(UTC).date()
+
+    last_meta_date = user_data.get("last_meta_date")
+    last_dice_date = user_data.get("last_dice_date")
+
+    # если дата не сегодняшняя — обнуляем счётчики
+    if last_meta_date != today:
+        user_data["last_meta_date"] = today
+        user_data["meta_used"] = 0
+    if last_dice_date != today:
+        user_data["last_dice_date"] = today
+        user_data["dice_used"] = 0
+
+    # на всякий случай, если ключей нет
+    user_data.setdefault("meta_used", 0)
+    user_data.setdefault("dice_used", 0)
+
+
+def get_meta_left(user_data: dict) -> int:
+    _normalize_daily_counters(user_data)
+    used = user_data.get("meta_used", 0)
+    return max(0, 3 - used)
+
+
+def get_dice_left(user_data: dict) -> int:
+    _normalize_daily_counters(user_data)
+    used = user_data.get("dice_used", 0)
+    return max(0, 3 - used)
+
+
+def build_main_keyboard(user_data: dict) -> InlineKeyboardMarkup:
+    """Клавиатура с учётом количества оставшихся попыток."""
+    meta_left = get_meta_left(user_data)
+    dice_left = get_dice_left(user_data)
+
+    meta_text = f"🃏 Метафорическая карта ({meta_left})"
+    dice_text = f"🎲 Кубик выбора ({dice_left})"
+
+    keyboard = [
+        [InlineKeyboardButton("📢 Перейти в канал", url=CHANNEL_LINK)],
+        [InlineKeyboardButton("🔔 Получать подсказки в ЛС", callback_data="subscribe")],
+        [InlineKeyboardButton(meta_text, callback_data="meta_card_today")],
+        [InlineKeyboardButton(dice_text, callback_data="dice_today")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 async def send_random_meta_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # находим чат (учитываем, что это может быть callback)
     chat = update.effective_chat
@@ -309,13 +359,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text(text)
 
-        keyboard = [
-            [InlineKeyboardButton("📢 Перейти в канал", url=CHANNEL_LINK)],
-            [InlineKeyboardButton("🔔 Получать подсказки в ЛС", callback_data="subscribe")],
-            [InlineKeyboardButton("🃏 Метафорическая карта на сегодня", callback_data="meta_card_today")],
-            [InlineKeyboardButton("🎲 Кубик выбора на сегодня", callback_data="dice_today")],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # клавиатура с лимитами на день
+        reply_markup = build_main_keyboard(context.user_data)
 
         info_text = (
             f"Если откликается эта карта — загляните в {CHANNEL_USERNAME}.\n"
@@ -324,6 +369,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await update.message.reply_text(info_text, reply_markup=reply_markup)
+
     else:
         print(">>> WARNING: update.message is None в /start")
 
@@ -337,16 +383,38 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer()
 
+    user_data = context.user_data
+    _normalize_daily_counters(user_data)
+
     if data == "subscribe":
         await query.edit_message_text(
             "✅ Откройте канал и убедитесь, что вы на него подписаны.\n"
             "Когда вы вернётесь к боту, он уже будет видеть вас как подписчика "
             "в статистике (если подписка оформлена)."
         )
+
     elif data == "meta_card_today":
-        await send_random_meta_card(update, context)
+        meta_used = user_data.get("meta_used", 0)
+        if meta_used >= 3:
+            await query.answer("Сегодня попытки метафорических карт закончились.", show_alert=True)
+        else:
+            user_data["meta_used"] = meta_used + 1
+            await send_random_meta_card(update, context)
+
+        # обновляем кнопки с новым количеством
+        await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
+
     elif data == "dice_today":
-        await send_random_dice(update, context)   
+        dice_used = user_data.get("dice_used", 0)
+        if dice_used >= 3:
+            await query.answer("Сегодня попытки кубика выбора закончились.", show_alert=True)
+        else:
+            user_data["dice_used"] = dice_used + 1
+            await send_random_dice(update, context)
+
+        # обновляем кнопки с новым количеством
+        await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
+
     elif data == "st:menu":
         if user_id not in ADMIN_IDS:
             await query.edit_message_text("Эта функция только для администратора.")
@@ -364,6 +432,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Админ‑меню:",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+
     elif data.startswith("st:"):
         await handle_stats_callback(update, context, data)
 
@@ -807,7 +876,36 @@ async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
 
     update_nurture_subscribed_after()
 
+# ===== ежедневное напоминание пользователям =====
 
+async def daily_reminder_job(context: ContextTypes.DEFAULT_TYPE):
+    """
+    Раз в день напоминает пользователям, что снова доступны
+    3 попытки метафорической карты и 3 броска кубика.
+    """
+    users = load_users()
+    if not users:
+        return
+
+    bot = context.bot
+    # уникальные user_id из лога
+    unique_ids = {int(row["user_id"]) for row in users if row.get("user_id")}
+
+    text = (
+        "Доброе утро! 🌅\n\n"
+        "На сегодня снова доступны:\n"
+        "🃏 3 попытки вытянуть метафорическую карту\n"
+        "🎲 3 броска кубика выбора\n\n"
+        "Нажми /start, чтобы начать свой день с подсказки и задать вопрос.\n"
+        "Если чувствуешь, что ситуация повторяется — можно сделать индивидуальный развернутый расклад, "
+        "просто напиши «РАСКЛАД» в ответ на сообщение бота."
+    )
+
+    for uid in unique_ids:
+        try:
+            await bot.send_message(chat_id=uid, text=text)
+        except Exception as e:
+            print(f"daily_reminder_job send error to {uid}: {e}")
 # ===== входная точка =====
 
 def main():
@@ -838,6 +936,12 @@ def main():
         interval=24 * 3600,
         first=600,
     )
+    # новая джоба: ежедневное напоминание
+    job_queue.run_daily(
+        daily_reminder_job,
+        time=time(5, 0),   # 05:00 UTC ≈ 08:00 по Москве
+        name="daily_reminder",
+    )
 
     app.run_webhook(
         listen="0.0.0.0",
@@ -850,5 +954,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
