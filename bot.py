@@ -4,6 +4,7 @@ import csv
 import json
 from datetime import datetime, UTC, timedelta, time
 from collections import defaultdict
+from telegram.error import TimedOut
 
 from telegram import (
     Update,
@@ -238,10 +239,21 @@ async def send_random_meta_card(update: Update, context: ContextTypes.DEFAULT_TY
     path = random.choice(files)
 
     with open(path, "rb") as f:
-        await chat.send_photo(
-            photo=f,
-            caption="🃏 Ваша метафорическая карта на сегодня",
-        )
+        try:
+            await chat.send_photo(
+                photo=f,
+                caption="🃏 Ваша метафорическая карта на сегодня",
+            )
+        except TimedOut:
+            await chat.send_message(
+                "Сейчас не получилось отправить карту (таймаут Telegram).\n"
+                "Попробуй, пожалуйста, ещё раз чуть позже."
+            )
+        except Exception as e:
+            print(f"send_random_meta_card error: {e}")
+            await chat.send_message(
+                "Произошла ошибка при отправке карты. Попробуй ещё раз позже."
+            )
 
 async def send_random_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # находим чат (учитываем, что это может быть callback)
@@ -266,11 +278,22 @@ async def send_random_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import random
     path = random.choice(files)
 
-    with open(path, "rb") as f:
-        await chat.send_photo(
-            photo=f,
-            caption="🎲 Кубик выбор",
-        )
+with open(path, "rb") as f:
+        try:
+            await chat.send_photo(
+                photo=f,
+                caption="🎲 Кубик выбор",
+            )
+        except TimedOut:
+            await chat.send_message(
+                "Сейчас не получилось отправить картинку кубика (таймаут Telegram).\n"
+                "Попробуй, пожалуйста, ещё раз чуть позже."
+            )
+        except Exception as e:
+            print(f"send_random_dice error: {e}")
+            await chat.send_message(
+                "Произошла ошибка при отправке кубика. Попробуй ещё раз позже."
+            )
 # ===== nurture‑лог =====
 
 def log_nurture_event(user_id: int, card_key: str, segment: str,
@@ -994,6 +1017,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
