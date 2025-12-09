@@ -16,6 +16,8 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 from telegram.constants import ParseMode
 
@@ -436,7 +438,44 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("st:"):
         await handle_stats_callback(update, context, data)
 
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обрабатываем обычные текстовые сообщения от пользователя."""
+    if not update.message:
+        return
 
+    text = (update.message.text or "").strip()
+    lower = text.lower()
+
+    # триггер на слово "расклад" в любом виде
+    if "расклад" in lower:
+        user = update.effective_user
+        user_id = user.id
+        username = user.username or ""
+        first_name = user.first_name or ""
+
+        # ответ пользователю
+        reply = (
+            "Поймала твой запрос на индивидуальный расклад. 💫\n\n"
+            "Напиши, пожалуйста, про какую ситуацию хочешь посмотреть:\n"
+            "– в чём сейчас вопрос/запрос;\n"
+            "– какой формат тебе комфортнее (голосом, текстом, поэтапно).\n\n"
+            "Я отвечу и предложу варианты по формату и стоимости."
+        )
+        await update.message.reply_text(reply)
+
+        # уведомление админам
+        admin_msg = (
+            f"🔔 Запрос на РАСКЛАД\n"
+            f"id: {user_id}\n"
+            f"username: @{username if username else '—'}\n"
+            f"имя: {first_name}\n"
+            f"текст: {text}"
+        )
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(chat_id=admin_id, text=admin_msg)
+            except Exception as e:
+                print(f"send RASKLAD notify error to {admin_id}: {e}")
 # ===== админ‑меню и статистика =====
 
 async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -918,6 +957,7 @@ def main():
     app.add_handler(CommandHandler("admin", admin_menu))
     app.add_handler(CommandHandler("debug_notify", debug_notify))
     app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     print(">>> Starting bot with built‑in webhook server")
 
@@ -954,6 +994,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
