@@ -235,7 +235,6 @@ async def send_random_meta_card(update: Update, context: ContextTypes.DEFAULT_TY
         await chat.send_message("Пока нет ни одной карты в папке meta_cards.")
         return
 
-    import random
     path = random.choice(files)
 
     with open(path, "rb") as f:
@@ -275,10 +274,9 @@ async def send_random_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await chat.send_message("Кубик пока не положили в папку dice.")
         return
 
-    import random
     path = random.choice(files)
 
-with open(path, "rb") as f:
+    with open(path, "rb") as f:
         try:
             await chat.send_photo(
                 photo=f,
@@ -294,6 +292,7 @@ with open(path, "rb") as f:
             await chat.send_message(
                 "Произошла ошибка при отправке кубика. Попробуй ещё раз позже."
             )
+
 # ===== nurture‑лог =====
 
 def log_nurture_event(user_id: int, card_key: str, segment: str,
@@ -1017,6 +1016,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
