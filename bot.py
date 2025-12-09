@@ -451,6 +451,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
             [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
             [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")]
+            [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
         ]
         await query.edit_message_text(
             "Админ‑меню:",
@@ -514,6 +515,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
         [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
         [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")]
+        [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
     ]
     await update.message.reply_text(
         "Админ‑меню:",
@@ -536,6 +538,22 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     parts = data.split(":")
     action = parts[1]
+    if action == "reset_attempts":
+        # обновляем попытки до 3/3 для текущего аккаунта
+        user_data = context.user_data
+        user_data["meta_used"] = 0
+        user_data["dice_used"] = 0
+
+        today = datetime.now(UTC).date()
+        user_data["last_meta_date"] = today
+        user_data["last_dice_date"] = today
+
+        # перерисовываем основную клавиатуру с (3)
+        await query.edit_message_reply_markup(
+            reply_markup=build_main_keyboard(user_data)
+        )
+        await query.answer("Попытки обновлены до 3/3 для этого аккаунта.", show_alert=True)
+        return
 
     if action == "export":
         await send_csv_file(query)
@@ -1016,6 +1034,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
