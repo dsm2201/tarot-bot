@@ -514,7 +514,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
         [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
         [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
-        [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")]
+        [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
         [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
     ]
     await update.message.reply_text(
@@ -1034,6 +1034,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
