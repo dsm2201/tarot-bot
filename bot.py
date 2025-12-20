@@ -35,16 +35,19 @@ CHANNEL_LINK = "https://t.me/tatiataro"
 USERS_CSV = "users.csv"
 LAST_REPORT_FILE = "last_report_ts.txt"
 NURTURE_LOG_CSV = "nurture_log.csv"
+ACTIONS_CSV = "actions.csv"  # новый файл для логирования действий
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEXTS_DIR = os.path.join(BASE_DIR, "texts")
 META_CARDS_DIR = os.path.join(BASE_DIR, "meta_cards")
 DICE_DIR = os.path.join(BASE_DIR, "dice")
 
+
 def load_json(name):
     path = os.path.join(TEXTS_DIR, name)
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 CARDS = load_json("cards.json")
 NURTURE_UNSUB = load_json("nurture_unsub.json")
@@ -67,6 +70,7 @@ def ensure_csv_exists():
                 "subscribed"
             ])
 
+
 def ensure_nurture_log_exists():
     if not os.path.exists(NURTURE_LOG_CSV):
         with open(NURTURE_LOG_CSV, "w", newline="", encoding="utf-8") as f:
@@ -81,6 +85,37 @@ def ensure_nurture_log_exists():
                 "error_msg",
                 "subscribed_after"  # yes / no / ""
             ])
+
+
+def ensure_actions_log_exists():
+    """Файл для логов действий внутри бота."""
+    if not os.path.exists(ACTIONS_CSV):
+        with open(ACTIONS_CSV, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "user_id",
+                "username",
+                "first_name",
+                "action",    # enter_from_channel / meta_card / dice
+                "source",    # channel / qr / direct / unknown
+                "ts_iso",
+            ])
+
+
+def log_action(user, action: str, source: str = "unknown"):
+    """Логируем любое действие пользователя в actions.csv."""
+    ensure_actions_log_exists()
+    ts_iso = datetime.now(UTC).isoformat(timespec="seconds")
+    with open(ACTIONS_CSV, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            user.id,
+            user.username or "",
+            user.first_name or "",
+            action,
+            source,
+            ts_iso,
+        ])
 
 
 def log_start(user_id: int, username: str | None,
@@ -134,6 +169,18 @@ def load_users():
     return users
 
 
+def load_actions():
+    """Читаем actions.csv как список словарей."""
+    if not os.path.exists(ACTIONS_CSV):
+        return []
+    rows = []
+    with open(ACTIONS_CSV, "r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            rows.append(r)
+    return rows
+
+
 def esc_md2(text: str) -> str:
     if text is None:
         return ""
@@ -174,7 +221,6 @@ def _normalize_daily_counters(user_data: dict):
     last_meta_date = user_data.get("last_meta_date")
     last_dice_date = user_data.get("last_dice_date")
 
-    # если дата не сегодняшняя — обнуляем счётчики
     if last_meta_date != today:
         user_data["last_meta_date"] = today
         user_data["meta_used"] = 0
@@ -182,7 +228,6 @@ def _normalize_daily_counters(user_data: dict):
         user_data["last_dice_date"] = today
         user_data["dice_used"] = 0
 
-    # на всякий случай, если ключей нет
     user_data.setdefault("meta_used", 0)
     user_data.setdefault("dice_used", 0)
 
@@ -200,7 +245,6 @@ def get_dice_left(user_data: dict) -> int:
 
 
 def build_main_keyboard(user_data: dict) -> InlineKeyboardMarkup:
-    """Клавиатура с учётом количества оставшихся попыток."""
     meta_left = get_meta_left(user_data)
     dice_left = get_dice_left(user_data)
 
@@ -215,8 +259,8 @@ def build_main_keyboard(user_data: dict) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(keyboard)
 
+
 async def send_random_meta_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # находим чат (учитываем, что это может быть callback)
     chat = update.effective_chat
     if chat is None and update.callback_query:
         chat = update.callback_query.message.chat
@@ -224,7 +268,6 @@ async def send_random_meta_card(update: Update, context: ContextTypes.DEFAULT_TY
     if chat is None:
         return
 
-    # собираем список jpg/jpeg в папке meta_cards
     files = []
     for name in os.listdir(META_CARDS_DIR):
         lower = name.lower()
@@ -254,8 +297,8 @@ async def send_random_meta_card(update: Update, context: ContextTypes.DEFAULT_TY
                 "Произошла ошибка при отправке карты. Попробуй ещё раз позже."
             )
 
+
 async def send_random_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # находим чат (учитываем, что это может быть callback)
     chat = update.effective_chat
     if chat is None and update.callback_query:
         chat = update.callback_query.message.chat
@@ -263,7 +306,6 @@ async def send_random_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat is None:
         return
 
-    # собираем список jpg/jpeg в папке dice
     files = []
     for name in os.listdir(DICE_DIR):
         lower = name.lower()
@@ -315,7 +357,6 @@ def log_nurture_event(user_id: int, card_key: str, segment: str,
 
 
 def update_nurture_subscribed_after():
-    """Обновляет поле subscribed_after в nurture_log.csv на основе текущего статуса."""
     if not os.path.exists(NURTURE_LOG_CSV):
         return
     if not os.path.exists(USERS_CSV):
@@ -348,7 +389,6 @@ def update_nurture_subscribed_after():
         writer = csv.writer(f)
         writer.writerows(rows)
 
-
 # ===== клиентские хендлеры =====
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -358,6 +398,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
     card_key = args[0] if args else ""
+    # источник для логов действий
+    source = "direct"
+    if card_key == "channel":
+        source = "channel"
+    elif card_key:
+        source = "qr"
+
     if card_key and card_key in CARDS:
         card = CARDS[card_key]
         text = f"{card['title']}\n\n" + card["body"].format(channel=CHANNEL_USERNAME)
@@ -380,10 +427,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         card_key=card_key,
     )
 
+    # логируем вход как действие
+    log_action(user, action="enter_from_channel" if source == "channel" else "enter_bot", source=source)
+
     if update.message:
         await update.message.reply_text(text)
 
-        # клавиатура с лимитами на день
         reply_markup = build_main_keyboard(context.user_data)
 
         info_text = (
@@ -393,7 +442,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await update.message.reply_text(info_text, reply_markup=reply_markup)
-
     else:
         print(">>> WARNING: update.message is None в /start")
 
@@ -401,7 +449,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
-    user_id = query.from_user.id
+    user = query.from_user
+    user_id = user.id
 
     print(">>> button handler called, data:", data, "user_id:", user_id)
 
@@ -424,8 +473,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             user_data["meta_used"] = meta_used + 1
             await send_random_meta_card(update, context)
+            # лог действия
+            log_action(user, action="meta_card", source="bot")
 
-        # обновляем кнопки с новым количеством
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
 
     elif data == "dice_today":
@@ -435,8 +485,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             user_data["dice_used"] = dice_used + 1
             await send_random_dice(update, context)
+            # лог действия
+            log_action(user, action="dice", source="bot")
 
-        # обновляем кнопки с новым количеством
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
 
     elif data == "st:menu":
@@ -450,7 +501,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
             [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
             [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
-            [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")]
+            [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
+            [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
+            [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
+            [InlineKeyboardButton("🧭 Действия: 7 дней", callback_data="st:actions:7days")],
             [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
         ]
         await query.edit_message_text(
@@ -461,22 +515,20 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("st:"):
         await handle_stats_callback(update, context, data)
 
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатываем обычные текстовые сообщения от пользователя."""
     if not update.message:
         return
 
     text = (update.message.text or "").strip()
     lower = text.lower()
 
-    # триггер на слово "расклад" в любом виде
     if "расклад" in lower:
         user = update.effective_user
         user_id = user.id
         username = user.username or ""
         first_name = user.first_name or ""
 
-        # ответ пользователю
         reply = (
             "Поймала твой запрос на индивидуальный расклад. 💫\n\n"
             "Напиши, пожалуйста, про какую ситуацию хочешь посмотреть:\n"
@@ -486,7 +538,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await update.message.reply_text(reply)
 
-        # уведомление админам
         admin_msg = (
             f"🔔 Запрос на РАСКЛАД\n"
             f"id: {user_id}\n"
@@ -499,6 +550,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(chat_id=admin_id, text=admin_msg)
             except Exception as e:
                 print(f"send RASKLAD notify error to {admin_id}: {e}")
+
 # ===== админ‑меню и статистика =====
 
 async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -515,6 +567,9 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
         [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
         [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
+        [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
+        [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
+        [InlineKeyboardButton("🧭 Действия: 7 дней", callback_data="st:actions:7days")],
         [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
     ]
     await update.message.reply_text(
@@ -538,27 +593,28 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     parts = data.split(":")
     action = parts[1]
+
+    # сброс попыток
     if action == "reset_attempts":
-        # обновляем попытки до 3/3 для текущего аккаунта
         user_data = context.user_data
         user_data["meta_used"] = 0
         user_data["dice_used"] = 0
-
         today = datetime.now(UTC).date()
         user_data["last_meta_date"] = today
         user_data["last_dice_date"] = today
 
-        # перерисовываем основную клавиатуру с (3)
         await query.edit_message_reply_markup(
             reply_markup=build_main_keyboard(user_data)
         )
         await query.answer("Попытки обновлены до 3/3 для этого аккаунта.", show_alert=True)
         return
 
+    # экспорт CSV
     if action == "export":
         await send_csv_file(query)
         return
 
+    # отчёт по автоворонке
     if action == "nurture":
         text = build_nurture_stats(days=7)
         await query.edit_message_text(
@@ -568,6 +624,18 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
+    # отчёты по действиям
+    if action == "actions":
+        period = parts[2] if len(parts) > 2 else "today"
+        text = build_actions_stats(period)
+        await query.edit_message_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            disable_web_page_preview=True,
+        )
+        return
+
+    # выбор карты для today
     if action == "today" and parts[2] == "cards":
         keyboard = []
         for key in CARD_KEYS:
@@ -592,7 +660,6 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         start_dt = now - timedelta(days=7)
         end_dt = now
     elif action == "alltime":
-        # очень ранняя дата как начало
         start_dt = datetime(2000, 1, 1, tzinfo=UTC)
         end_dt = now
     else:
@@ -607,6 +674,80 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         parse_mode=ParseMode.MARKDOWN_V2,
         disable_web_page_preview=True,
     )
+
+
+def build_actions_stats(period: str) -> str:
+    """Отчёты по actions.csv: входы, мета‑карта, кубик."""
+    rows = load_actions()
+    if not rows:
+        return esc_md2("Лог действий пока пуст.")
+
+    now = datetime.now(UTC)
+
+    if period == "today":
+        start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_dt = now
+        period_str = f"{start_dt.date()}"
+    elif period == "yesterday":
+        y = now - timedelta(days=1)
+        start_dt = y.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_dt = y.replace(hour=23, minute=59, second=59, microsecond=0)
+        period_str = f"{start_dt.date()}"
+    elif period == "7days":
+        start_dt = now - timedelta(days=7)
+        end_dt = now
+        period_str = f"{start_dt.date()} — {end_dt.date()}"
+    else:
+        start_dt = datetime(2000, 1, 1, tzinfo=UTC)
+        end_dt = now
+        period_str = "за всё время"
+
+    filtered = []
+    for r in rows:
+        dt = parse_iso(r["ts_iso"])
+        if dt is None:
+            continue
+        if not (start_dt <= dt <= end_dt):
+            continue
+        filtered.append(r)
+
+    if not filtered:
+        return esc_md2(f"В период {period_str} действий не было.")
+
+    total = len(filtered)
+    by_action = defaultdict(int)
+    for r in filtered:
+        by_action[r["action"]] += 1
+
+    header = esc_md2(f"Действия пользователей за {period_str}")
+    lines = [header, ""]
+    lines.append(esc_md2(f"Всего действий: {total}"))
+    for act, cnt in by_action.items():
+        lines.append(esc_md2(f"{act}: {cnt}"))
+
+    lines.append("")
+    lines.append(esc_md2("Пользователи и их действия:"))
+
+    filtered_sorted = sorted(filtered, key=lambda r: r["ts_iso"])
+    for r in filtered_sorted:
+        uid = r["user_id"]
+        username = r["username"]
+        first_name = r["first_name"]
+        act = r["action"]
+        src = r["source"]
+        ts_iso = r["ts_iso"]
+
+        if username:
+            who = f"@{username}"
+        elif first_name:
+            who = f"{first_name} (id{uid})"
+        else:
+            who = f"id{uid}"
+
+        line = f"{who} — {act} ({src}) — {ts_iso}"
+        lines.append(esc_md2(line))
+
+    return "\n".join(lines)
 
 
 async def build_stats_text(context: ContextTypes.DEFAULT_TYPE,
@@ -693,11 +834,9 @@ async def build_stats_text(context: ContextTypes.DEFAULT_TYPE,
         conv = round(s / c * 100, 1) if c > 0 else 0
         lines.append(esc_md2(f"{ck}: переходов {c}, подписчиков {s}, конверсия {conv}%"))
 
-    # детальный список пользователей
     lines.append("")
     lines.append(esc_md2("Список пользователей:"))
 
-    # сортируем по времени
     filtered_sorted = sorted(filtered, key=lambda r: r["date_iso"])
 
     for row in filtered_sorted:
@@ -719,7 +858,6 @@ async def build_stats_text(context: ContextTypes.DEFAULT_TYPE,
 
 
 def build_nurture_stats(days: int = 7) -> str:
-    """Краткий отчёт по nurture за последние N дней на основе nurture_log.csv."""
     if not os.path.exists(NURTURE_LOG_CSV):
         return esc_md2("Лог автоворонки пока пуст.")
 
@@ -782,7 +920,6 @@ async def send_csv_file(query):
             caption="Файл со всеми переходами.",
         )
     await query.edit_message_reply_markup(reply_markup=None)
-
 
 # ===== авто‑уведомления для админа =====
 
@@ -870,16 +1007,9 @@ async def debug_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Запускаю тестовое автоуведомление...")
     await notify_admins_once(context, force=True)
 
-
 # ===== автоворонка nurture (sub / unsub) =====
 
 async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
-    """
-    Ежедневная джоба: проходит по пользователям,
-    считает дни с момента первого захода и шлёт сообщения
-    из NURTURE_UNSUB / NURTURE_SUB для нужных дней.
-    Плюс обновляет subscribed_after в логе.
-    """
     users = load_users()
     if not users:
         return
@@ -923,7 +1053,6 @@ async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
             is_sub = False
             update_subscribed_flag(int(uid), False)
 
-        # unsub: дни 1, 3, 7
         if not is_sub and days in (1, 3, 7):
             day_num = days
             day_key = f"day_{days}"
@@ -938,7 +1067,6 @@ async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
                     print(f"nurture unsub send error to {uid}: {e}")
                     log_nurture_event(int(uid), card_key, "unsub", day_num, "error", str(e))
 
-        # sub: дни 3, 7, 14
         if is_sub and days in (3, 7, 14):
             day_num = days
             day_key = f"day_{days}"
@@ -958,16 +1086,11 @@ async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
 # ===== ежедневное напоминание пользователям =====
 
 async def daily_reminder_job(context: ContextTypes.DEFAULT_TYPE):
-    """
-    Раз в день напоминает пользователям, что снова доступны
-    3 попытки метафорической карты и 3 броска кубика.
-    """
     users = load_users()
     if not users:
         return
 
     bot = context.bot
-    # уникальные user_id из лога
     unique_ids = {int(row["user_id"]) for row in users if row.get("user_id")}
 
     text = (
@@ -985,6 +1108,7 @@ async def daily_reminder_job(context: ContextTypes.DEFAULT_TYPE):
             await bot.send_message(chat_id=uid, text=text)
         except Exception as e:
             print(f"daily_reminder_job send error to {uid}: {e}")
+
 # ===== входная точка =====
 
 def main():
@@ -1016,7 +1140,6 @@ def main():
         interval=24 * 3600,
         first=600,
     )
-    # новая джоба: ежедневное напоминание
     job_queue.run_daily(
         daily_reminder_job,
         time=time(5, 0),   # 05:00 UTC ≈ 08:00 по Москве
@@ -1034,11 +1157,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
