@@ -45,6 +45,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEXTS_DIR = os.path.join(BASE_DIR, "texts")
 META_CARDS_DIR = os.path.join(BASE_DIR, "meta_cards")
 DICE_DIR = os.path.join(BASE_DIR, "dice")
+PACKS_DIR = os.path.join(BASE_DIR, "packs_images")
 
 # ===== настройки Google Sheets =====
 GS_SERVICE_JSON = os.getenv("GS_SERVICE_JSON")
@@ -342,8 +343,8 @@ def build_main_keyboard(user_data: dict) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def get_pack_description(code: str) -> tuple[str, str]:
-    """Название и описание расклада по коду."""
+def get_pack_description(code: str) -> tuple[str, str, str]:
+    """Название, описание и имя файла расклада по коду."""
     if code == "grapes12":
         title = "🍇 «12 виноградин» — Новогодний ритуал"
         desc = (
@@ -351,6 +352,7 @@ def get_pack_description(code: str) -> tuple[str, str]:
             "Мы смотрим, какие темы года просятся в твою жизнь, где важно загадать желание, "
             "а где — отпустить ожидания и освободить место под новое."
         )
+        filename = "grapes12.jpg"
     elif code == "bye_year":
         title = "👋 «Прощай, уходящий год»"
         desc = (
@@ -359,6 +361,7 @@ def get_pack_description(code: str) -> tuple[str, str]:
             "Подходит, если хочется закрыть хвосты, перестать вариться в прошлом "
             "и перейти в новый год легче."
         )
+        filename = "bye_year.jpg"
     elif code == "mission":
         title = "🌟 «Луч миссии» — Предназначение"
         desc = (
@@ -366,6 +369,7 @@ def get_pack_description(code: str) -> tuple[str, str]:
             "через что ты естественно проявляешься и где теряется опора.\n\n"
             "Помогает поймать ориентир, если кажется, что живёшь не своей жизнью."
         )
+        filename = "mission.jpg"
     elif code == "anchor":
         title = "🪨 «Точка опоры» — Состояние и ресурс"
         desc = (
@@ -373,6 +377,7 @@ def get_pack_description(code: str) -> tuple[str, str]:
             "какие ресурсы уже есть, а какие проседают.\n\n"
             "Подходит, когда шатает, накрывают качели и хочется устойчивости."
         )
+        filename = "anchor.jpg"
     elif code == "money":
         title = "💰 «Финансовый ключ» — Деньги и благополучие"
         desc = (
@@ -380,6 +385,7 @@ def get_pack_description(code: str) -> tuple[str, str]:
             "Помогает увидеть, где ты сам себе перекрываешь поток, а где есть реальные "
             "возможности для увеличения дохода."
         )
+        filename = "money.jpg"
     elif code == "choice":
         title = "🧭 «Компас выбора» — Выбор и развилки"
         desc = (
@@ -387,6 +393,7 @@ def get_pack_description(code: str) -> tuple[str, str]:
             "Смотрим, что стоит за каждым вариантом, какие последствия у выбора "
             "и где больше жизни и ресурса для тебя."
         )
+        filename = "choice.jpg"
     elif code == "career":
         title = "🚀 «Разворот в работе» — Карьера и успех"
         desc = (
@@ -394,6 +401,7 @@ def get_pack_description(code: str) -> tuple[str, str]:
             "Подходит, если хочется перемен в профессии, перехода в новое дело "
             "или ясности, в какую сторону разворачиваться."
         )
+        filename = "career.jpg"
     elif code == "love":
         title = "💞 «Точка притяжения» — Любовь и отношения"
         desc = (
@@ -401,11 +409,13 @@ def get_pack_description(code: str) -> tuple[str, str]:
             "какой динамике склонна пара и где твоя зона влияния.\n\n"
             "Подходит и для текущих отношений, и для запроса «почему не складывается»."
         )
+        filename = "love.jpg"
     else:
         title = "Расклад"
         desc = "Описание этого расклада появится чуть позже."
+        filename = ""
 
-    return title, desc
+    return title, desc, filename
 
 async def send_random_meta_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -724,7 +734,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("pack:"):
         # показать описание выбранного расклада и кнопку "выбрать"
         code = data.split(":", 1)[1]
-        title, desc = get_pack_description(code)
+        title, desc, filename = get_pack_description(code)
 
         text = f"{title}\n\n{desc}"
 
@@ -732,10 +742,29 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("✅ Выбрать этот расклад", callback_data=f"pack_select:{code}")],
             [InlineKeyboardButton("⬅️ Назад к списку", callback_data="packs_menu")],
         ]
-        await query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(select_keyboard),
-        )
+
+        if filename:
+            image_path = os.path.join(PACKS_DIR, filename)
+            try:
+                with open(image_path, "rb") as f:
+                    await query.message.reply_photo(
+                        photo=f,
+                        caption=text,
+                        reply_markup=InlineKeyboardMarkup(select_keyboard),
+                    )
+                # старое сообщение с меню обновляем, чтобы не оставалось лишних кнопок
+                await query.edit_message_reply_markup(reply_markup=None)
+            except FileNotFoundError:
+                print(f"pack image not found: {image_path}")
+                await query.edit_message_text(
+                    text,
+                    reply_markup=InlineKeyboardMarkup(select_keyboard),
+                )
+        else:
+            await query.edit_message_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(select_keyboard),
+            )
 
     elif data.startswith("pack_select:"):
         # человек нажал "выбрать расклад"
@@ -1415,6 +1444,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
