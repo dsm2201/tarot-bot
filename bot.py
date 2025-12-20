@@ -22,6 +22,10 @@ from telegram.ext import (
 )
 from telegram.constants import ParseMode
 
+# ===== импорты для Google Sheets =====
+import gspread
+from gspread.auth import service_account_from_dict  # [web:131][web:136]
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
 
@@ -35,12 +39,52 @@ CHANNEL_LINK = "https://t.me/tatiataro"
 USERS_CSV = "users.csv"
 LAST_REPORT_FILE = "last_report_ts.txt"
 NURTURE_LOG_CSV = "nurture_log.csv"
-ACTIONS_CSV = "actions.csv"  # новый файл для логирования действий
+ACTIONS_CSV = "actions.csv"  # локальный лог, оставляем как резерв
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEXTS_DIR = os.path.join(BASE_DIR, "texts")
 META_CARDS_DIR = os.path.join(BASE_DIR, "meta_cards")
 DICE_DIR = os.path.join(BASE_DIR, "dice")
+
+# ===== настройки Google Sheets =====
+GS_SERVICE_JSON = os.getenv("GS_SERVICE_JSON")
+GS_SHEET_ID = os.getenv("GS_SHEET_ID")
+USERS_SHEET_NAME = "users"
+ACTIONS_SHEET_NAME = "actions"
+
+GS_CLIENT = None
+GS_SHEET = None
+GS_USERS_WS = None
+GS_ACTIONS_WS = None
+
+
+def init_gs_client():
+    """Инициализация клиента gspread из JSON в переменной окружения."""
+    global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS
+
+    if not GS_SERVICE_JSON or not GS_SHEET_ID:
+        print(">>> Google Sheets: переменные GS_SERVICE_JSON / GS_SHEET_ID не заданы.")
+        return
+
+    try:
+        info = json.loads(GS_SERVICE_JSON)
+        # service_account_from_dict есть в gspread.auth [web:131][web:136]
+        client = service_account_from_dict(info)
+        sheet = client.open_by_key(GS_SHEET_ID)
+        users_ws = sheet.worksheet(USERS_SHEET_NAME)
+        actions_ws = sheet.worksheet(ACTIONS_SHEET_NAME)
+
+        GS_CLIENT = client
+        GS_SHEET = sheet
+        GS_USERS_WS = users_ws
+        GS_ACTIONS_WS = actions_ws
+        print(">>> Google Sheets: успешно подключено к tatiataro_log.")
+    except Exception as e:
+        print(f">>> Google Sheets init error: {e}")
+        GS_CLIENT = None
+        GS_SHEET = None
+        GS_USERS_WS = None
+        GS_ACTIONS_WS = None
 
 
 def load_json(name):
@@ -102,8 +146,8 @@ def ensure_actions_log_exists():
             ])
 
 
-def log_action(user, action: str, source: str = "unknown"):
-    """Логируем любое действие пользователя в actions.csv."""
+def log_action_csv(user, action: str, source: str = "unknown"):
+    """Резервный лог в локальный CSV."""
     ensure_actions_log_exists()
     ts_iso = datetime.now(UTC).isoformat(timespec="seconds")
     with open(ACTIONS_CSV, "a", newline="", encoding="utf-8") as f:
@@ -118,8 +162,8 @@ def log_action(user, action: str, source: str = "unknown"):
         ])
 
 
-def log_start(user_id: int, username: str | None,
-              first_name: str | None, card_key: str | None):
+def log_start_csv(user_id: int, username: str | None,
+                  first_name: str | None, card_key: str | None):
     ensure_csv_exists()
     date_iso = datetime.now(UTC).isoformat(timespec="seconds")
     row = [
@@ -170,7 +214,7 @@ def load_users():
 
 
 def load_actions():
-    """Читаем actions.csv как список словарей."""
+    """Читаем actions.csv как список словарей (пока отчёты делаем по CSV)."""
     if not os.path.exists(ACTIONS_CSV):
         return []
     rows = []
@@ -212,10 +256,48 @@ def save_last_report_ts(ts: datetime):
     with open(LAST_REPORT_FILE, "w", encoding="utf-8") as f:
         f.write(ts.isoformat(timespec="seconds"))
 
+# ===== логирование в Google Sheets =====
+
+def log_start_to_sheet(user, card_key: str | None):
+    """Лог входа пользователя в лист users."""
+    if GS_USERS_WS is None:
+        return
+    date_iso = datetime.now(UTC).isoformat(timespec="seconds")
+    row = [
+        str(user.id),
+        user.username or "",
+        user.first_name or "",
+        card_key or "",
+        date_iso,
+        "unsub",
+    ]
+    try:
+        GS_USERS_WS.append_row(row, value_input_option="RAW")
+    except Exception as e:
+        print(f">>> log_start_to_sheet error: {e}")
+
+
+def log_action_to_sheet(user, action: str, source: str = "unknown"):
+    """Лог действия пользователя в лист actions."""
+    if GS_ACTIONS_WS is None:
+        return
+    ts_iso = datetime.now(UTC).isoformat(timespec="seconds")
+    row = [
+        str(user.id),
+        user.username or "",
+        user.first_name or "",
+        action,
+        source,
+        ts_iso,
+    ]
+    try:
+        GS_ACTIONS_WS.append_row(row, value_input_option="RAW")
+    except Exception as e:
+        print(f">>> log_action_to_sheet error: {e}")
+
 # ===== лимиты попыток на день =====
 
 def _normalize_daily_counters(user_data: dict):
-    """Сбрасывает счётчики на новый день и гарантирует наличие ключей."""
     today = datetime.now(UTC).date()
 
     last_meta_date = user_data.get("last_meta_date")
@@ -398,7 +480,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
     card_key = args[0] if args else ""
-    # источник для логов действий
     source = "direct"
     if card_key == "channel":
         source = "channel"
@@ -420,15 +501,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "чтобы получить свою расшифровку и дальнейшие подсказки в канале {channel}."
         ).format(channel=CHANNEL_USERNAME)
 
-    log_start(
+    # лог в локальный CSV (для совместимости)
+    log_start_csv(
         user_id=user.id,
         username=user.username,
         first_name=user.first_name,
         card_key=card_key,
     )
+    # лог в Google Sheets
+    log_start_to_sheet(user, card_key)
 
-    # логируем вход как действие
-    log_action(user, action="enter_from_channel" if source == "channel" else "enter_bot", source=source)
+    # лог действия (вход)
+    action_name = "enter_from_channel" if source == "channel" else "enter_bot"
+    log_action_csv(user, action_name, source)
+    log_action_to_sheet(user, action_name, source)
 
     if update.message:
         await update.message.reply_text(text)
@@ -474,7 +560,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data["meta_used"] = meta_used + 1
             await send_random_meta_card(update, context)
             # лог действия
-            log_action(user, action="meta_card", source="bot")
+            log_action_csv(user, "meta_card", "bot")
+            log_action_to_sheet(user, "meta_card", "bot")
 
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
 
@@ -486,7 +573,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data["dice_used"] = dice_used + 1
             await send_random_dice(update, context)
             # лог действия
-            log_action(user, action="dice", source="bot")
+            log_action_csv(user, "dice", "bot")
+            log_action_to_sheet(user, "dice", "bot")
 
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
 
@@ -594,7 +682,6 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
     parts = data.split(":")
     action = parts[1]
 
-    # сброс попыток
     if action == "reset_attempts":
         user_data = context.user_data
         user_data["meta_used"] = 0
@@ -609,12 +696,10 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer("Попытки обновлены до 3/3 для этого аккаунта.", show_alert=True)
         return
 
-    # экспорт CSV
     if action == "export":
         await send_csv_file(query)
         return
 
-    # отчёт по автоворонке
     if action == "nurture":
         text = build_nurture_stats(days=7)
         await query.edit_message_text(
@@ -624,7 +709,6 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    # отчёты по действиям
     if action == "actions":
         period = parts[2] if len(parts) > 2 else "today"
         text = build_actions_stats(period)
@@ -635,7 +719,6 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    # выбор карты для today
     if action == "today" and parts[2] == "cards":
         keyboard = []
         for key in CARD_KEYS:
@@ -677,7 +760,6 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 def build_actions_stats(period: str) -> str:
-    """Отчёты по actions.csv: входы, мета‑карта, кубик."""
     rows = load_actions()
     if not rows:
         return esc_md2("Лог действий пока пуст.")
@@ -1114,6 +1196,9 @@ async def daily_reminder_job(context: ContextTypes.DEFAULT_TYPE):
 def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN не задан")
+
+    # инициализируем Google Sheets
+    init_gs_client()
 
     app = Application.builder().token(BOT_TOKEN).build()
 
