@@ -1,1 +1,3 @@
 python-telegram-bot[job-queue,webhooks]==21.9
+gspread
+google-auth
