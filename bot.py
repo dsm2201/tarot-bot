@@ -703,8 +703,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Админ‑меню:",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
-        
-elif data == "packs_menu":
+
+    elif data == "packs_menu":
         # подменю с раскладами
         packs_keyboard = [
             [InlineKeyboardButton("🍇 12 виноградин", callback_data="pack:grapes12")],
@@ -769,14 +769,13 @@ elif data == "packs_menu":
             except Exception as e:
                 print(f"send pack_select notify error to {admin_id}: {e}")
 
-        # можно сразу вернуть пользователя к главному меню
+        # вернуть пользователя к главному меню
         await query.edit_message_reply_markup(
             reply_markup=build_main_keyboard(context.user_data)
         )
 
     elif data.startswith("st:"):
         await handle_stats_callback(update, context, data)
-
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
@@ -1416,6 +1415,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
