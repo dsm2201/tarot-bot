@@ -703,6 +703,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Админ‑меню:",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+        
 elif data == "packs_menu":
         # подменю с раскладами
         packs_keyboard = [
@@ -720,7 +721,7 @@ elif data == "packs_menu":
             reply_markup=InlineKeyboardMarkup(packs_keyboard),
         )
 
-elif data.startswith("pack:"):
+    elif data.startswith("pack:"):
         # показать описание выбранного расклада и кнопку "выбрать"
         code = data.split(":", 1)[1]
         title, desc = get_pack_description(code)
@@ -1415,5 +1416,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
