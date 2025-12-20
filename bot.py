@@ -24,7 +24,7 @@ from telegram.constants import ParseMode
 
 # ===== импорты для Google Sheets =====
 import gspread
-from gspread.auth import service_account_from_dict  # [web:131][web:136]
+from gspread.auth import service_account_from_dict
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
@@ -36,10 +36,8 @@ ADMIN_IDS = {457388809, 8089136347}
 CHANNEL_USERNAME = "@tatiataro"
 CHANNEL_LINK = "https://t.me/tatiataro"
 
-USERS_CSV = "users.csv"
+# Локальные файлы, которые ещё используем
 LAST_REPORT_FILE = "last_report_ts.txt"
-NURTURE_LOG_CSV = "nurture_log.csv"
-ACTIONS_CSV = "actions.csv"  # локальный лог, оставляем как резерв
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEXTS_DIR = os.path.join(BASE_DIR, "texts")
@@ -52,16 +50,18 @@ GS_SERVICE_JSON = os.getenv("GS_SERVICE_JSON")
 GS_SHEET_ID = os.getenv("GS_SHEET_ID")
 USERS_SHEET_NAME = "users"
 ACTIONS_SHEET_NAME = "actions"
+NURTURE_SHEET_NAME = "nurture"
 
 GS_CLIENT = None
 GS_SHEET = None
 GS_USERS_WS = None
 GS_ACTIONS_WS = None
+GS_NURTURE_WS = None
 
 
 def init_gs_client():
     """Инициализация клиента gspread из JSON в переменной окружения."""
-    global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS
+    global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS
 
     if not GS_SERVICE_JSON or not GS_SHEET_ID:
         print(">>> Google Sheets: переменные GS_SERVICE_JSON / GS_SHEET_ID не заданы.")
@@ -69,16 +69,20 @@ def init_gs_client():
 
     try:
         info = json.loads(GS_SERVICE_JSON)
-        # service_account_from_dict есть в gspread.auth [web:131][web:136]
         client = service_account_from_dict(info)
         sheet = client.open_by_key(GS_SHEET_ID)
         users_ws = sheet.worksheet(USERS_SHEET_NAME)
         actions_ws = sheet.worksheet(ACTIONS_SHEET_NAME)
+        try:
+            nurture_ws = sheet.worksheet(NURTURE_SHEET_NAME)
+        except Exception:
+            nurture_ws = None
 
         GS_CLIENT = client
         GS_SHEET = sheet
         GS_USERS_WS = users_ws
         GS_ACTIONS_WS = actions_ws
+        GS_NURTURE_WS = nurture_ws
         print(">>> Google Sheets: успешно подключено к tatiataro_log.")
     except Exception as e:
         print(f">>> Google Sheets init error: {e}")
@@ -86,6 +90,7 @@ def init_gs_client():
         GS_SHEET = None
         GS_USERS_WS = None
         GS_ACTIONS_WS = None
+        GS_NURTURE_WS = None
 
 
 def load_json(name):
@@ -100,130 +105,7 @@ NURTURE_SUB = load_json("nurture_sub.json")
 
 CARD_KEYS = list(CARDS.keys())
 
-# ===== утилиты CSV и дат =====
-
-def ensure_csv_exists():
-    if not os.path.exists(USERS_CSV):
-        with open(USERS_CSV, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                "user_id",
-                "username",
-                "first_name",
-                "card_key",
-                "date_iso",
-                "subscribed"
-            ])
-
-
-def ensure_nurture_log_exists():
-    if not os.path.exists(NURTURE_LOG_CSV):
-        with open(NURTURE_LOG_CSV, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                "user_id",
-                "card_key",
-                "segment",          # unsub / sub
-                "day_num",          # 1,3,7,14...
-                "sent_at",
-                "status",           # ok / error
-                "error_msg",
-                "subscribed_after"  # yes / no / ""
-            ])
-
-
-def ensure_actions_log_exists():
-    """Файл для логов действий внутри бота."""
-    if not os.path.exists(ACTIONS_CSV):
-        with open(ACTIONS_CSV, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                "user_id",
-                "username",
-                "first_name",
-                "action",    # enter_from_channel / meta_card / dice
-                "source",    # channel / qr / direct / unknown
-                "ts_iso",
-            ])
-
-
-def log_action_csv(user, action: str, source: str = "unknown"):
-    """Резервный лог в локальный CSV."""
-    ensure_actions_log_exists()
-    ts_iso = datetime.now(UTC).isoformat(timespec="seconds")
-    with open(ACTIONS_CSV, "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            user.id,
-            user.username or "",
-            user.first_name or "",
-            action,
-            source,
-            ts_iso,
-        ])
-
-
-def log_start_csv(user_id: int, username: str | None,
-                  first_name: str | None, card_key: str | None):
-    ensure_csv_exists()
-    date_iso = datetime.now(UTC).isoformat(timespec="seconds")
-    row = [
-        user_id,
-        username or "",
-        first_name or "",
-        card_key or "",
-        date_iso,
-        "unsub",
-    ]
-    with open(USERS_CSV, "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(row)
-
-
-def update_subscribed_flag(user_id: int, is_sub: bool):
-    if not os.path.exists(USERS_CSV):
-        return
-
-    rows = []
-    with open(USERS_CSV, "r", newline="", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        for r in reader:
-            rows.append(r)
-
-    if not rows:
-        return
-
-    for i in range(1, len(rows)):
-        if str(rows[i][0]) == str(user_id):
-            rows[i][5] = "sub" if is_sub else "unsub"
-
-    with open(USERS_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerows(rows)
-
-
-def load_users():
-    if not os.path.exists(USERS_CSV):
-        return []
-
-    users = []
-    with open(USERS_CSV, "r", newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            users.append(row)
-    return users
-
-
-def load_actions():
-    """Читаем actions.csv как список словарей (пока отчёты делаем по CSV)."""
-    if not os.path.exists(ACTIONS_CSV):
-        return []
-    rows = []
-    with open(ACTIONS_CSV, "r", newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for r in reader:
-            rows.append(r)
-    return rows
+# ===== утилиты дат и текста =====
 
 
 def esc_md2(text: str) -> str:
@@ -258,6 +140,7 @@ def save_last_report_ts(ts: datetime):
         f.write(ts.isoformat(timespec="seconds"))
 
 # ===== логирование в Google Sheets =====
+
 
 def log_start_to_sheet(user, card_key: str | None):
     """Лог входа пользователя в лист users."""
@@ -296,7 +179,121 @@ def log_action_to_sheet(user, action: str, source: str = "unknown"):
     except Exception as e:
         print(f">>> log_action_to_sheet error: {e}")
 
+
+def log_nurture_to_sheet(user_id: int, card_key: str, segment: str,
+                         day_num: int, status: str, error_msg: str = ""):
+    """Лог nurture-сообщения в лист nurture."""
+    if GS_NURTURE_WS is None:
+        return
+    sent_at = datetime.now(UTC).isoformat(timespec="seconds")
+    row = [
+        str(user_id),
+        card_key,
+        segment,
+        str(day_num),
+        sent_at,
+        status,
+        error_msg,
+        "",  # subscribed_after
+    ]
+    try:
+        GS_NURTURE_WS.append_row(row, value_input_option="RAW")
+    except Exception as e:
+        print(f">>> log_nurture_to_sheet error: {e}")
+
+# ===== чтение из Google Sheets =====
+
+
+def load_users() -> list[dict]:
+    """Читаем всех пользователей из листа users."""
+    if GS_USERS_WS is None:
+        return []
+    try:
+        records = GS_USERS_WS.get_all_records()
+        # гарантируем строковые user_id
+        for r in records:
+            r["user_id"] = str(r.get("user_id", "")).strip()
+            r["card_key"] = (r.get("card_key") or "").strip()
+            r["date_iso"] = (r.get("date_iso") or "").strip()
+            r["subscribed"] = (r.get("subscribed") or "").strip()
+        return records
+    except Exception as e:
+        print(f">>> load_users (Sheets) error: {e}")
+        return []
+
+
+def load_actions() -> list[dict]:
+    """Читаем лог действий из листа actions."""
+    if GS_ACTIONS_WS is None:
+        return []
+    try:
+        records = GS_ACTIONS_WS.get_all_records()
+        for r in records:
+            r["user_id"] = str(r.get("user_id", "")).strip()
+            r["action"] = (r.get("action") or "").strip()
+            r["source"] = (r.get("source") or "").strip()
+            r["ts_iso"] = (r.get("ts_iso") or "").strip()
+            r["username"] = (r.get("username") or "").strip()
+            r["first_name"] = (r.get("first_name") or "").strip()
+        return records
+    except Exception as e:
+        print(f">>> load_actions (Sheets) error: {e}")
+        return []
+
+
+def load_nurture_rows() -> list[dict]:
+    """Читаем nurture-лог из листа nurture."""
+    if GS_NURTURE_WS is None:
+        return []
+    try:
+        records = GS_NURTURE_WS.get_all_records()
+        for r in records:
+            r["user_id"] = str(r.get("user_id", "")).strip()
+            r["card_key"] = (r.get("card_key") or "").strip()
+            r["segment"] = (r.get("segment") or "").strip()
+            r["day_num"] = str(r.get("day_num", "")).strip()
+            r["sent_at"] = (r.get("sent_at") or "").strip()
+            r["status"] = (r.get("status") or "").strip()
+            r["error_msg"] = (r.get("error_msg") or "").strip()
+            r["subscribed_after"] = (r.get("subscribed_after") or "").strip()
+        return records
+    except Exception as e:
+        print(f">>> load_nurture_rows (Sheets) error: {e}")
+        return []
+
+# ===== обновление статуса подписки в Sheets =====
+
+
+def update_subscribed_flag(user_id: int, is_sub: bool):
+    """Обновляем поле subscribed для всех строк этого user_id в листе users."""
+    if GS_USERS_WS is None:
+        return
+    try:
+        all_values = GS_USERS_WS.get_all_values()
+        if not all_values:
+            return
+
+        header = all_values[0]
+        try:
+            idx_id = header.index("user_id")
+            idx_sub = header.index("subscribed")
+        except ValueError:
+            print(">>> update_subscribed_flag: нет нужных столбцов в users")
+            return
+
+        target_id = str(user_id)
+        for i in range(1, len(all_values)):
+            row = all_values[i]
+            if len(row) <= max(idx_id, idx_sub):
+                continue
+            if row[idx_id].strip() == target_id:
+                row[idx_sub] = "sub" if is_sub else "unsub"
+                GS_USERS_WS.update_cell(i + 1, idx_sub + 1, row[idx_sub])
+    except Exception as e:
+        print(f">>> update_subscribed_flag (Sheets) error: {e}")
+
 # ===== лимиты попыток на день =====
+
 
 def _normalize_daily_counters(user_data: dict):
     today = datetime.now(UTC).date()
@@ -339,9 +336,10 @@ def build_main_keyboard(user_data: dict) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🔔 Получать подсказки в ЛС", callback_data="subscribe")],
         [InlineKeyboardButton(meta_text, callback_data="meta_card_today")],
         [InlineKeyboardButton(dice_text, callback_data="dice_today")],
-        [InlineKeyboardButton("📚 Расклады", callback_data="packs_menu")],  # НОВАЯ СТРОКА
+        [InlineKeyboardButton("📚 Расклады", callback_data="packs_menu")],
     ]
     return InlineKeyboardMarkup(keyboard)
+
 
 def get_pack_description(code: str) -> tuple[str, str, str]:
     """Название, описание и имя файла расклада по коду."""
@@ -416,6 +414,9 @@ def get_pack_description(code: str) -> tuple[str, str, str]:
         filename = ""
 
     return title, desc, filename
+
+# ===== отправка картинок =====
+
 
 async def send_random_meta_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -492,61 +493,47 @@ async def send_random_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Произошла ошибка при отправке кубика. Попробуй ещё раз позже."
             )
 
-# ===== nurture‑лог =====
-
-def log_nurture_event(user_id: int, card_key: str, segment: str,
-                      day_num: int, status: str, error_msg: str = ""):
-    ensure_nurture_log_exists()
-    sent_at = datetime.now(UTC).isoformat(timespec="seconds")
-    row = [
-        str(user_id),
-        card_key,
-        segment,
-        str(day_num),
-        sent_at,
-        status,
-        error_msg,
-        ""  # subscribed_after
-    ]
-    with open(NURTURE_LOG_CSV, "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(row)
+# ===== nurture: подсчёт subscribed_after в Sheets =====
 
 
 def update_nurture_subscribed_after():
-    if not os.path.exists(NURTURE_LOG_CSV):
-        return
-    if not os.path.exists(USERS_CSV):
+    """Проставляем subscribed_after в nurture по актуальному статусу подписки из users."""
+    if GS_NURTURE_WS is None or GS_USERS_WS is None:
         return
 
     users = load_users()
-    sub_map = {row["user_id"]: row["subscribed"] for row in users}
-
-    rows = []
-    with open(NURTURE_LOG_CSV, "r", newline="", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        for r in reader:
-            rows.append(r)
-
-    if not rows:
+    if not users:
         return
 
-    header = rows[0]
-    idx_user = header.index("user_id")
-    idx_sub_after = header.index("subscribed_after")
+    sub_map = {row["user_id"]: row.get("subscribed", "unsub") for row in users}
 
-    for i in range(1, len(rows)):
-        uid = rows[i][idx_user]
-        if rows[i][idx_sub_after]:
-            continue
-        status = sub_map.get(uid, "unsub")
-        rows[i][idx_sub_after] = "yes" if status == "sub" else "no"
+    try:
+        all_values = GS_NURTURE_WS.get_all_values()
+        if not all_values:
+            return
+        header = all_values[0]
+        try:
+            idx_user = header.index("user_id")
+            idx_sub_after = header.index("subscribed_after")
+        except ValueError:
+            print(">>> nurture sheet: нет нужных столбцов")
+            return
 
-    with open(NURTURE_LOG_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerows(rows)
+        for i in range(1, len(all_values)):
+            row = all_values[i]
+            if len(row) <= max(idx_user, idx_sub_after):
+                continue
+            if row[idx_sub_after]:
+                continue
+            uid = row[idx_user].strip()
+            status = sub_map.get(uid, "unsub")
+            val = "yes" if status == "sub" else "no"
+            GS_NURTURE_WS.update_cell(i + 1, idx_sub_after + 1, val)
+    except Exception as e:
+        print(f">>> update_nurture_subscribed_after (Sheets) error: {e}")
 
 # ===== клиентские хендлеры =====
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(">>> /start handler called, update_id:", update.update_id)
@@ -621,19 +608,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "а здесь жми кнопки ниже — начнём с карты и кубика."
         )
 
-    # лог в локальный CSV (для совместимости)
-    log_start_csv(
-        user_id=user.id,
-        username=user.username,
-        first_name=user.first_name,
-        card_key=card_key,
-    )
     # лог в Google Sheets
     log_start_to_sheet(user, card_key)
 
     # лог действия (вход)
     action_name = "enter_from_channel" if source == "channel" else "enter_bot"
-    log_action_csv(user, action_name, source)
     log_action_to_sheet(user, action_name, source)
 
     if update.message:
@@ -674,7 +653,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data["meta_used"] = meta_used + 1
             await send_random_meta_card(update, context)
             # лог действия
-            log_action_csv(user, "meta_card", "bot")
             log_action_to_sheet(user, "meta_card", "bot")
 
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
@@ -687,7 +665,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data["dice_used"] = dice_used + 1
             await send_random_dice(update, context)
             # лог действия
-            log_action_csv(user, "dice", "bot")
             log_action_to_sheet(user, "dice", "bot")
 
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
@@ -702,7 +679,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
             [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
             [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
-            [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
+            # CSV больше не используем, но кнопку оставим или можно убрать:
+            # [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
             [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
             [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
             [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
@@ -752,7 +730,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         caption=text,
                         reply_markup=InlineKeyboardMarkup(select_keyboard),
                     )
-                # старое сообщение с меню обновляем, чтобы не оставалось лишних кнопок
                 await query.edit_message_reply_markup(reply_markup=None)
             except FileNotFoundError:
                 print(f"pack image not found: {image_path}")
@@ -798,6 +775,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"send pack_select notify error to {admin_id}: {e}")
 
+        # лог выбора расклада как действия
+        log_action_to_sheet(user, f"pack_select_{code}", "bot")
+
         # вернуть пользователя к главному меню
         await query.edit_message_reply_markup(
             reply_markup=build_main_keyboard(context.user_data)
@@ -805,6 +785,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("st:"):
         await handle_stats_callback(update, context, data)
+
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
@@ -829,7 +810,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reply)
 
         admin_msg = (
-            f"🔔 Запрос на РАСКЛАД\n"
+            "🔔 Запрос на РАСКЛАД\n"
             f"id: {user_id}\n"
             f"username: @{username if username else '—'}\n"
             f"имя: {first_name}\n"
@@ -843,6 +824,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== админ‑меню и статистика =====
 
+
 async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user.id not in ADMIN_IDS:
@@ -855,7 +837,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
         [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
         [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
-        [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
+        # [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
         [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
         [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
         [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
@@ -899,7 +881,7 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     if action == "export":
-        await send_csv_file(query)
+        await query.edit_message_text("CSV больше не используется, все данные в Google Sheets.")
         return
 
     if action == "nurture":
@@ -1048,6 +1030,8 @@ async def build_stats_text(context: ContextTypes.DEFAULT_TYPE,
     unique_ids = {row["user_id"] for row in users}
     real_status: dict[str, str] = {}
     for uid in unique_ids:
+        if not uid:
+            continue
         try:
             cm = await bot.get_chat_member(chat_id=channel_id, user_id=int(uid))
             if cm.status in ("creator", "administrator", "member"):
@@ -1142,18 +1126,12 @@ async def build_stats_text(context: ContextTypes.DEFAULT_TYPE,
 
 
 def build_nurture_stats(days: int = 7) -> str:
-    if not os.path.exists(NURTURE_LOG_CSV):
+    rows = load_nurture_rows()
+    if not rows:
         return esc_md2("Лог автоворонки пока пуст.")
 
     now = datetime.now(UTC)
     since = now - timedelta(days=days)
-
-    with open(NURTURE_LOG_CSV, "r", newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        rows = [r for r in reader]
-
-    if not rows:
-        return esc_md2("Лог автоворонки пока пуст.")
 
     total_sent = 0
     by_segment = defaultdict(int)
@@ -1192,20 +1170,8 @@ def build_nurture_stats(days: int = 7) -> str:
 
     return "\n".join(lines)
 
-
-async def send_csv_file(query):
-    if not os.path.exists(USERS_CSV):
-        await query.edit_message_text("Файл статистики пока не создан.")
-        return
-
-    with open(USERS_CSV, "rb") as f:
-        await query.message.reply_document(
-            document=InputFile(f, filename="users.csv"),
-            caption="Файл со всеми переходами.",
-        )
-    await query.edit_message_reply_markup(reply_markup=None)
-
 # ===== авто‑уведомления для админа =====
+
 
 async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
     now = datetime.now(UTC)
@@ -1245,6 +1211,8 @@ async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = F
     new_subs = set()
 
     for uid in unique_ids:
+        if not uid:
+            continue
         try:
             cm = await bot.get_chat_member(chat_id=channel_id, user_id=int(uid))
             if cm.status in ("creator", "administrator", "member"):
@@ -1293,6 +1261,7 @@ async def debug_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== автоворонка nurture (sub / unsub) =====
 
+
 async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
     users = load_users()
     if not users:
@@ -1306,7 +1275,7 @@ async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
     for row in users:
         uid = row["user_id"]
         dt = parse_iso(row["date_iso"])
-        if dt is None:
+        if dt is None or not uid:
             continue
         if uid not in by_user:
             by_user[uid] = {
@@ -1316,7 +1285,8 @@ async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
         else:
             if dt < by_user[uid]["first_dt"]:
                 by_user[uid]["first_dt"] = dt
-            if dt > parse_iso(by_user[uid]["last_row"]["date_iso"]):
+            last_dt = parse_iso(by_user[uid]["last_row"]["date_iso"])
+            if last_dt is None or dt > last_dt:
                 by_user[uid]["last_row"] = row
 
     for uid, info in by_user.items():
@@ -1346,10 +1316,10 @@ async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
                 text = msg_template.format(channel=CHANNEL_USERNAME)
                 try:
                     await bot.send_message(chat_id=int(uid), text=text)
-                    log_nurture_event(int(uid), card_key, "unsub", day_num, "ok")
+                    log_nurture_to_sheet(int(uid), card_key, "unsub", day_num, "ok")
                 except Exception as e:
                     print(f"nurture unsub send error to {uid}: {e}")
-                    log_nurture_event(int(uid), card_key, "unsub", day_num, "error", str(e))
+                    log_nurture_to_sheet(int(uid), card_key, "unsub", day_num, "error", str(e))
 
         if is_sub and days in (3, 7, 14):
             day_num = days
@@ -1360,14 +1330,15 @@ async def nurture_job(context: ContextTypes.DEFAULT_TYPE):
                 text = msg_template.format(channel=CHANNEL_USERNAME)
                 try:
                     await bot.send_message(chat_id=int(uid), text=text)
-                    log_nurture_event(int(uid), card_key, "sub", day_num, "ok")
+                    log_nurture_to_sheet(int(uid), card_key, "sub", day_num, "ok")
                 except Exception as e:
                     print(f"nurture sub send error to {uid}: {e}")
-                    log_nurture_event(int(uid), card_key, "sub", day_num, "error", str(e))
+                    log_nurture_to_sheet(int(uid), card_key, "sub", day_num, "error", str(e))
 
     update_nurture_subscribed_after()
 
 # ===== ежедневное напоминание пользователям =====
+
 
 async def daily_reminder_job(context: ContextTypes.DEFAULT_TYPE):
     users = load_users()
@@ -1394,6 +1365,7 @@ async def daily_reminder_job(context: ContextTypes.DEFAULT_TYPE):
             print(f"daily_reminder_job send error to {uid}: {e}")
 
 # ===== входная точка =====
+
 
 def main():
     if not BOT_TOKEN:
@@ -1444,8 +1416,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
