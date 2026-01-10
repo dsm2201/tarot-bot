@@ -12,6 +12,7 @@ from telegram import (
     InlineKeyboardMarkup,
     InputFile,
 )
+
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -682,7 +683,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     card_key = ""
     special_start = ""  # channel / rasklad / другое спец-значение
 
-       if args:
+    if args:
         arg0 = args[0]
         if arg0 == "channel":
             source = "channel"
@@ -690,7 +691,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif arg0 == "rasklad":
             source = "channel"
             special_start = "rasklad"
-        elif arg0 == "day_card":  # ДОбавляем эту строку
+        elif arg0 == "day_card":  # добавили этот случай
             source = "card_of_day"
             special_start = "day_card"
         elif arg0 in CARDS:
@@ -724,9 +725,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "много бесплатных раскладов и примеров разборов."
         )
 
-        elif special_start == "day_card":
+    elif special_start == "day_card":
         text = (
-            "Вижу, что ты пришёл из карты дня! 🃏\\n\\n"
+            "Вижу, что ты пришёл из карты дня! 🃏\n\n"
             "Если эта карта откликается — можешь вернуться в основное меню и вытянуть ещё одну, "
             "или сделать индивидуальный расклад для более глубокого разбора."
         )
@@ -769,11 +770,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text)
 
         reply_markup = build_main_keyboard(context.user_data)
-
         await update.message.reply_text(info_text, reply_markup=reply_markup)
     else:
         print(">>> WARNING: update.message is None в /start")
-
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1598,6 +1597,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
