@@ -565,8 +565,7 @@ async def send_random_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== nurture: подсчёт subscribed_after в Sheets =====
 
-def load_card_of_the_day()
-() -> dict | None:
+def load_card_of_the_day() -> dict | None:
     """Загружаем случайную карту дня из Google Sheets."""
     if GS_CARD_OF_DAY_WS is None:
         return None
@@ -1597,5 +1596,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
