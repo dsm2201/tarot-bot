@@ -44,6 +44,11 @@ TEXTS_DIR = os.path.join(BASE_DIR, "texts")
 META_CARDS_DIR = os.path.join(BASE_DIR, "meta_cards")
 DICE_DIR = os.path.join(BASE_DIR, "dice")
 PACKS_DIR = os.path.join(BASE_DIR, "packs_images")
+CARD_OF_DAY_DIR = os.path.join(BASE_DIR, "card_of_day_images")
+
+# Статус карты дня: True = авто, False = ручная
+CARD_OF_DAY_ENABLED = True
+CARD_OF_DAY_STATUS = {}  # {"enabled": True/False}
 
 # ===== настройки Google Sheets =====
 GS_SERVICE_JSON = os.getenv("GS_SERVICE_JSON")
@@ -51,17 +56,19 @@ GS_SHEET_ID = os.getenv("GS_SHEET_ID")
 USERS_SHEET_NAME = "users"
 ACTIONS_SHEET_NAME = "actions"
 NURTURE_SHEET_NAME = "nurture"
+CARD_OF_DAY_SHEET_NAME = "card_of_day"
 
 GS_CLIENT = None
 GS_SHEET = None
 GS_USERS_WS = None
 GS_ACTIONS_WS = None
 GS_NURTURE_WS = None
+GS_CARD_OF_DAY_WS = None
 
 
 def init_gs_client():
     """Инициализация клиента gspread из JSON в переменной окружения."""
-    global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS
+    global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS, GS_CARD_OF_DAY_WS
 
     if not GS_SERVICE_JSON or not GS_SHEET_ID:
         print(">>> Google Sheets: переменные GS_SERVICE_JSON / GS_SHEET_ID не заданы.")
@@ -78,11 +85,17 @@ def init_gs_client():
         except Exception:
             nurture_ws = None
 
+        try:
+            card_of_day_ws = sheet.worksheet(CARD_OF_DAY_SHEET_NAME)
+        except Exception:
+            card_of_day_ws = None
+
         GS_CLIENT = client
         GS_SHEET = sheet
         GS_USERS_WS = users_ws
         GS_ACTIONS_WS = actions_ws
         GS_NURTURE_WS = nurture_ws
+        GS_CARD_OF_DAY_WS = card_of_day_ws
         print(">>> Google Sheets: успешно подключено к tatiataro_log.")
     except Exception as e:
         print(f">>> Google Sheets init error: {e}")
@@ -91,6 +104,7 @@ def init_gs_client():
         GS_USERS_WS = None
         GS_ACTIONS_WS = None
         GS_NURTURE_WS = None
+        GS_CARD_OF_DAY_WS = None
 
 
 def load_json(name):
@@ -203,6 +217,62 @@ def log_nurture_to_sheet(user_id: int, card_key: str, segment: str,
 
 # ===== чтение из Google Sheets =====
 
+def log_card_of_day_publish(card_name: str, mode: str = "auto"):
+    """Логируем публикацию карты дня в Google Sheets."""
+    if GS_ACTIONS_WS is None:
+        return
+    ts_iso = datetime.now(UTC).isoformat(timespec="seconds")
+    row = [
+        "0",  # system
+        "bot",
+        "card_of_day",
+        f"card_of_day_publish_{card_name}",
+        mode,
+        ts_iso,
+    ]
+    try:
+        GS_ACTIONS_WS.append_row(row, value_input_option="RAW")
+    except Exception as e:
+        print(f">>> log_card_of_day_publish error: {e}")
+
+def get_card_of_day_stats(days: int = 7) -> str:
+    """Статистика по карте дня за последние N дней."""
+    rows = load_actions()
+    if not rows:
+        return esc_md2("Статистика карты дня пока пуста.")
+    
+    now = datetime.now(UTC)
+    since = now - timedelta(days=days)
+    
+    card_publishes = []
+    for r in rows:
+        ts_iso = r.get("ts_iso", "").strip()
+        action = r.get("action", "").strip()
+        
+        if "card_of_day" not in action:
+            continue
+        
+        ts = parse_iso(ts_iso)
+        if ts is None or ts < since:
+            continue
+        
+        card_publishes.append(r)
+    
+    if not card_publishes:
+        return esc_md2(f"За последние {days} дней карта дня не публиковалась.")
+    
+    total = len(card_publishes)
+    auto_count = sum(1 for r in card_publishes if r.get("source") == "auto")
+    manual_count = sum(1 for r in card_publishes if r.get("source") == "manual")
+    
+    lines = []
+    lines.append(esc_md2(f"Статистика карты дня за {days} дней"))
+    lines.append("")
+    lines.append(esc_md2(f"Всего публикаций: {total}"))
+    lines.append(esc_md2(f"Автоматических (🤖): {auto_count}"))
+    lines.append(esc_md2(f"Ручных (👋): {manual_count}"))
+    
+    return "\n".join(lines)
 
 def load_users() -> list[dict]:
     """Читаем всех пользователей из листа users."""
@@ -495,6 +565,57 @@ async def send_random_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== nurture: подсчёт subscribed_after в Sheets =====
 
+def load_card_of_the_day() -> dict | None:
+    """Загружаем случайную карту дня из Google Sheets."""
+    if GS_CARD_OF_DAY_WS is None:
+        return None
+    try:
+        records = GS_CARD_OF_DAY_WS.get_all_records()
+        if not records:
+            return None
+        return random.choice(records)
+    except Exception as e:
+        print(f">>> load_card_of_the_day error: {e}")
+        return None
+
+async def send_card_of_the_day_to_channel(context: ContextTypes.DEFAULT_TYPE):
+    """Отправляет карту дня в канал если карта дня включена."""
+    # Проверяем статус
+    if not CARD_OF_DAY_STATUS.get("enabled", True):
+        print(">>> Карта дня отключена (ручной режим)")
+        return
+    
+    card_data = load_card_of_the_day()
+    if card_data is None:
+        print(">>> send_card_of_the_day_to_channel: нет данных")
+        return
+    
+    file_name = card_data.get("file_name", "").strip()
+    card_title = card_data.get("card_title", "").strip()
+    text = card_data.get("text", "").strip()
+    
+    if not file_name or not text:
+        print(">>> send_card_of_the_day_to_channel: неполные данные в Sheets")
+        return
+    
+    image_path = os.path.join(CARD_OF_DAY_DIR, file_name)
+    if not os.path.exists(image_path):
+        print(f">>> send_card_of_the_day_to_channel: файл не найден {image_path}")
+        return
+    
+    try:
+        with open(image_path, "rb") as f:
+            await context.bot.send_photo(
+                chat_id=CHANNEL_USERNAME,
+                photo=f,
+                caption=text,
+                parse_mode=ParseMode.HTML,
+            )
+        print(f">>> Карта дня опубликована: {card_title}")
+        # Логируем публикацию
+        log_card_of_day_publish(card_title, "auto")
+    except Exception as e:
+        print(f">>> send_card_of_the_day_to_channel error: {e}")
 
 def update_nurture_subscribed_after():
     """Проставляем subscribed_after в nurture по актуальному статусу подписки из users."""
@@ -546,14 +667,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     card_key = ""
     special_start = ""  # channel / rasklad / другое спец-значение
 
-    if args:
+       if args:
         arg0 = args[0]
         if arg0 == "channel":
             source = "channel"
             special_start = "channel"
         elif arg0 == "rasklad":
-            source = "channel"   # считаем, что тоже пришёл из канала/ссылки
+            source = "channel"
             special_start = "rasklad"
+        elif arg0 == "day_card":  # ДОбавляем эту строку
+            source = "card_of_day"
+            special_start = "day_card"
         elif arg0 in CARDS:
             source = "qr"
             card_key = arg0
@@ -583,6 +707,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         info_text = (
             f"Если по ходу переписки захочешь ещё подумать — в {CHANNEL_USERNAME} "
             "много бесплатных раскладов и примеров разборов."
+        )
+
+        elif special_start == "day_card":
+        text = (
+            "Вижу, что ты пришёл из карты дня! 🃏\\n\\n"
+            "Если эта карта откликается — можешь вернуться в основное меню и вытянуть ещё одну, "
+            "или сделать индивидуальный расклад для более глубокого разбора."
+        )
+        info_text = (
+            f"Подписывайся на {CHANNEL_USERNAME}, чтобы не пропускать карты дня. "
+            "Здесь же можешь использовать метафорические карты и кубик выбора."
         )
 
     elif card_key:
@@ -673,14 +808,17 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id not in ADMIN_IDS:
             await query.edit_message_text("Эта функция только для администратора.")
             return
+    
+        # Статус карты дня
+        cod_status = "🤖 Авто" if CARD_OF_DAY_STATUS.get("enabled", True) else "👋 Ручная"
+    
         keyboard = [
+            [InlineKeyboardButton(f"📅 Карта дня: {cod_status}", callback_data="st:cod_status")],
             [InlineKeyboardButton("📊 Сегодня: все карты", callback_data="st:today:all")],
             [InlineKeyboardButton("📊 Сегодня: по карте", callback_data="st:today:cards")],
             [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
             [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
             [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
-            # CSV больше не используем, но кнопку оставим или можно убрать:
-            # [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
             [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
             [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
             [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
@@ -690,7 +828,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "Админ‑меню:",
             reply_markup=InlineKeyboardMarkup(keyboard),
-        )
+    )
 
     elif data == "packs_menu":
         # подменю с раскладами
@@ -830,14 +968,17 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id not in ADMIN_IDS:
         await update.message.reply_text("Эта команда только для администратора.")
         return
-
+    
+    # Статус карты дня
+    cod_status = "🤖 Авто" if CARD_OF_DAY_STATUS.get("enabled", True) else "👋 Ручная"
+    
     keyboard = [
+        [InlineKeyboardButton(f"📅 Карта дня: {cod_status}", callback_data="st:cod_status")],
         [InlineKeyboardButton("📊 Сегодня: все карты", callback_data="st:today:all")],
         [InlineKeyboardButton("📊 Сегодня: по карте", callback_data="st:today:cards")],
         [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
         [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
         [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
-        # [InlineKeyboardButton("📁 Скачать CSV", callback_data="st:export:csv")],
         [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
         [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
         [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
@@ -848,7 +989,6 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Админ‑меню:",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
-
     entry_keyboard = [[InlineKeyboardButton("⚙ Открыть админ‑панель", callback_data="st:menu")]]
     await update.message.reply_text(
         "Кнопка для быстрого входа в админ‑панель:",
@@ -866,6 +1006,31 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
     parts = data.split(":")
     action = parts[1]
 
+    # ===== cod_status =====
+    if action == "cod_status":
+        current = CARD_OF_DAY_STATUS.get("enabled", True)
+        CARD_OF_DAY_STATUS["enabled"] = not current
+        new_status = "🤖 Авто" if CARD_OF_DAY_STATUS["enabled"] else "👋 Ручная"
+        
+        await query.answer(f"Карта дня переведена в режим: {new_status}", show_alert=True)
+        
+        keyboard = [
+            [InlineKeyboardButton(f"📅 Карта дня: {new_status}", callback_data="st:cod_status")],
+            [InlineKeyboardButton("📊 Сегодня: все карты", callback_data="st:today:all")],
+            [InlineKeyboardButton("📊 Сегодня: по карте", callback_data="st:today:cards")],
+            [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
+            [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
+            [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
+            [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
+            [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
+            [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
+            [InlineKeyboardButton("🧭 Действия: 7 дней", callback_data="st:actions:7days")],
+            [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
+        ]
+        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    # ===== reset_attempts =====
     if action == "reset_attempts":
         user_data = context.user_data
         user_data["meta_used"] = 0
@@ -873,17 +1038,13 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         today = datetime.now(UTC).date()
         user_data["last_meta_date"] = today
         user_data["last_dice_date"] = today
-
         await query.edit_message_reply_markup(
             reply_markup=build_main_keyboard(user_data)
         )
         await query.answer("Попытки обновлены до 3/3 для этого аккаунта.", show_alert=True)
         return
 
-    if action == "export":
-        await query.edit_message_text("CSV больше не используется, все данные в Google Sheets.")
-        return
-
+    # ===== nurture =====
     if action == "nurture":
         text = build_nurture_stats(days=7)
         await query.edit_message_text(
@@ -893,6 +1054,7 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
+    # ===== actions =====
     if action == "actions":
         period = parts[2] if len(parts) > 2 else "today"
         text = build_actions_stats(period)
@@ -903,7 +1065,8 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    if action == "today" and parts[2] == "cards":
+    # ===== today + cards =====
+    if action == "today" and len(parts) > 2 and parts[2] == "cards":
         keyboard = []
         for key in CARD_KEYS:
             keyboard.append(
@@ -915,6 +1078,7 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
+    # ===== период и фильтр =====
     now = datetime.now(UTC)
     if action == "today":
         start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -934,7 +1098,6 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     card_filter = parts[2] if len(parts) > 2 else "all"
-
     text = await build_stats_text(context, start_dt, end_dt, card_filter)
     await query.edit_message_text(
         text,
@@ -1400,11 +1563,15 @@ def main():
         first=600,
     )
     job_queue.run_daily(
+    send_card_of_the_day_to_channel,
+    time=time(5, 30),  # 05:30 UTC ≈ 08:30 по Москве (раньше, чем напоминание)
+    name="card_of_day",
+    )
+    job_queue.run_daily(
         daily_reminder_job,
         time=time(5, 0),   # 05:00 UTC ≈ 08:00 по Москве
         name="daily_reminder",
     )
-
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
@@ -1416,3 +1583,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
