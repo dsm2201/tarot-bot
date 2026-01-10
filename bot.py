@@ -587,7 +587,8 @@ def load_card_of_the_day() -> dict | None:
         
         # Выбираем карту с учетом весов
         selected = random.choices(records, weights=weights, k=1)[0]
-        return selected    except Exception as e:
+        return selected
+        except Exception as e:
         print(f">>> load_card_of_the_day error: {e}")
         return None
 
@@ -1596,6 +1597,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
