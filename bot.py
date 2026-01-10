@@ -565,7 +565,8 @@ async def send_random_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== nurture: подсчёт subscribed_after в Sheets =====
 
-def load_card_of_the_day() -> dict | None:
+def 699
+() -> dict | None:
     """Загружаем случайную карту дня из Google Sheets."""
     if GS_CARD_OF_DAY_WS is None:
         return None
@@ -573,8 +574,21 @@ def load_card_of_the_day() -> dict | None:
         records = GS_CARD_OF_DAY_WS.get_all_records()
         if not records:
             return None
-        return random.choice(records)
-    except Exception as e:
+# Получаем веса (по умолчанию 1 если не указано)
+        weights = []
+        for record in records:
+            weight = record.get("weight", 1)
+            try:
+                weight = float(weight) if weight else 1
+                if weight < 0:
+                    weight = 1
+            except (ValueError, TypeError):
+                weight = 1
+            weights.append(weight)
+        
+        # Выбираем карту с учетом весов
+        selected = random.choices(records, weights=weights, k=1)[0]
+        return selected    except Exception as e:
         print(f">>> load_card_of_the_day error: {e}")
         return None
 
@@ -1583,4 +1597,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
