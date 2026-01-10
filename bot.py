@@ -820,10 +820,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "st:menu":
         if user_id not in ADMIN_IDS:
-            await query.edit_message_text("Эта функция только для администратора.")
+            await query.answer("Эта функция только для администратора.", show_alert=True)
             return
     
-        # Статус карты дня
         cod_status = "🤖 Авто" if CARD_OF_DAY_STATUS.get("enabled", True) else "👋 Ручная"
     
         keyboard = [
@@ -839,10 +838,13 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🧭 Действия: 7 дней", callback_data="st:actions:7days")],
             [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
         ]
-        await query.edit_message_text(
+    
+        # вместо edit_message_text
+        await query.message.reply_text(
             "Админ‑меню:",
             reply_markup=InlineKeyboardMarkup(keyboard),
     )
+
 
     elif data == "packs_menu":
         # подменю с раскладами
@@ -898,7 +900,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("pack_select:"):
         # человек нажал "выбрать расклад"
         code = data.split(":", 1)[1]
-        title, _ = get_pack_description(code)
+        title, _, _ = get_pack_description(code)
 
         # ответ пользователю
         reply = (
@@ -1578,7 +1580,7 @@ def main():
     )
     job_queue.run_daily(
     send_card_of_the_day_to_channel,
-    time=time(5, 30),  # 05:30 UTC ≈ 08:30 по Москве (раньше, чем напоминание)
+    time=time(14, 05),  # 05:30 UTC ≈ 08:30 по Москве (раньше, чем напоминание)
     name="card_of_day",
     )
     job_queue.run_daily(
@@ -1597,6 +1599,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
