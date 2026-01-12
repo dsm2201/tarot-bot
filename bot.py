@@ -479,10 +479,6 @@ def get_pack_description(code: str) -> tuple[str, str, str]:
             "Подходит и для текущих отношений, и для запроса «почему не складывается»."
         )
         filename = "love.jpg"
-    else:
-        title = "Расклад"
-        desc = "Описание этого расклада появится чуть позже."
-        filename = ""
 
     return title, desc, filename
 
@@ -1649,6 +1645,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
