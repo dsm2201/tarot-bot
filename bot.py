@@ -607,6 +607,20 @@ async def test_day_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_card_of_the_day_to_channel(context)
     await update.message.reply_text("Готово (если в логах нет ошибок).")
 
+async def reload_packs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Перезагружаем расклады из Google Sheets (только для админа)."""
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text("Эта команда только для администратора.")
+        return
+    
+    await update.message.reply_text("⏳ Перезагружаю расклады из Google Sheets...")
+    load_packs_from_sheets()
+    
+    if PACKS_DATA:
+        await update.message.reply_text(f"✅ Загружено {len(PACKS_DATA)} раскладов!")
+    else:
+        await update.message.reply_text("⚠️ Расклады не загружены. Проверь лист 'packs'.")
 
 def update_nurture_subscribed_after():
     """Проставляем subscribed_after в nurture по актуальному статусу подписки из users."""
@@ -901,26 +915,36 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     
         if filename:
-            image_path = os.path.join(PACKS_DIR, filename)
-            try:
-                with open(image_path, "rb") as f:
-                    await query.message.reply_photo(
-                        photo=f,
-                        caption=text,
-                        reply_markup=InlineKeyboardMarkup(select_keyboard),
-                    )
-            except FileNotFoundError:
-                print(f"pack image not found: {image_path}")
-                await query.message.reply_text(
-                    text,
+            # Проверяем, это URL или локальный файл
+            if filename.startswith(("http://", "https://")):
+                # Это URL - отправляем фото по ссылке
+                await query.message.reply_photo(
+                    photo=filename,
+                    caption=text,
                     reply_markup=InlineKeyboardMarkup(select_keyboard),
                 )
+            else:
+                # Это локальный файл в папке packs_images
+                image_path = os.path.join(PACKS_DIR, filename)
+                try:
+                    with open(image_path, "rb") as f:
+                        await query.message.reply_photo(
+                            photo=f,
+                            caption=text,
+                            reply_markup=InlineKeyboardMarkup(select_keyboard),
+                        )
+                except FileNotFoundError:
+                    print(f"pack image not found: {image_path}")
+                    await query.message.reply_text(
+                        text,
+                        reply_markup=InlineKeyboardMarkup(select_keyboard),
+                    )
         else:
             await query.message.reply_text(
                 text,
                 reply_markup=InlineKeyboardMarkup(select_keyboard),
             )
-
+            
     elif data == "pack:other":
     # Свой запрос — сразу переходим к запросу описания (как в pack_select)
         reply = (
@@ -1597,6 +1621,7 @@ def main():
     app.add_handler(CommandHandler("debug_notify", debug_notify))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(CommandHandler("reload_packs", reload_packs))
 
     print(">>> Starting bot with built‑in webhook server")
 
@@ -1639,6 +1664,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
