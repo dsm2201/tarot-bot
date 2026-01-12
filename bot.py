@@ -873,8 +873,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
-
-
     elif data == "packs_menu":
         # подменю с раскладами
         packs_keyboard = [
@@ -892,7 +890,43 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Выбери расклад, который откликается или нажми «Свой вопрос:",
             reply_markup=InlineKeyboardMarkup(packs_keyboard),
         )
-
+        
+    elif data == "pack:other":
+        # Свой запрос — ЭТОТ БЛОК ДОЛЖЕН БЫТЬ ЗДЕСЬ, ДО startswith!
+        reply = (
+            "Поймала твой запрос на расклад «Расклад». 💫\n\n"
+            "Напиши пару слов про свою ситуацию и что хочешь понять этим раскладом.\n"
+            "Я посмотрю и предложу формат по глубине и стоимости.\n\n"
+            "Для связи пиши мне в ЛС @Tatiataro18"
+        )
+        await query.message.reply_text(reply)
+        
+        # уведомление админам
+        user = query.from_user
+        username = user.username or ""
+        first_name = user.first_name or ""
+        user_id = user.id
+        admin_msg = (
+            f"🔔 Выбор расклада через кнопку\n"
+            f"Расклад: Расклад (other)\n"
+            f"id: {user_id}\n"
+            f"username: @{username if username else '—'}\n"
+            f"имя: {first_name}"
+        )
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(chat_id=admin_id, text=admin_msg)
+            except Exception as e:
+                print(f"send pack_select notify error to {admin_id}: {e}")
+        
+        # лог выбора расклада
+        log_action_to_sheet(user, "pack_select_other", "bot")
+        
+        # вернуть пользователя к главному меню
+        await query.edit_message_reply_markup(
+            reply_markup=build_main_keyboard(context.user_data)
+        )
+    
     elif data.startswith("pack:"):
         # показать описание выбранного расклада и кнопку "выбрать"
         code = data.split(":", 1)[1]
@@ -1643,6 +1677,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
