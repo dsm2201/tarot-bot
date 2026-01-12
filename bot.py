@@ -407,7 +407,7 @@ def build_main_keyboard(user_data: dict) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🔔 Получать подсказки в ЛС", callback_data="subscribe")],
         [InlineKeyboardButton(meta_text, callback_data="meta_card_today")],
         [InlineKeyboardButton(dice_text, callback_data="dice_today")],
-        [InlineKeyboardButton("📚 Расклады", callback_data="packs_menu")],
+        [InlineKeyboardButton("📚 Запись на расклад", callback_data="packs_menu")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -863,6 +863,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "packs_menu":
         # подменю с раскладами
         packs_keyboard = [
+            [InlineKeyboardButton("📝 Свой вопрос", callback_data="pack:other")],
             [InlineKeyboardButton("🍇 12 виноградин", callback_data="pack:grapes12")],
             [InlineKeyboardButton("👋 Прощай, уходящий год", callback_data="pack:bye_year")],
             [InlineKeyboardButton("🌟 Луч миссии", callback_data="pack:mission")],
@@ -873,7 +874,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("💞 Точка притяжения", callback_data="pack:love")],
         ]
         await query.message.reply_text(
-            "Выбери расклад, который откликается:",
+            "Выбери расклад, который откликается или нажми «Свой вопрос:",
             reply_markup=InlineKeyboardMarkup(packs_keyboard),
         )
 
@@ -910,6 +911,15 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(select_keyboard),
             )
 
+        elif data == "pack:other":
+            # человек не выбирает конкретный расклад, а пишет свой запрос
+            reply = (
+                "Поймала твой запрос на расклад. 💫\n\n"
+                "Напиши пару слов про свою ситуацию и что хочешь понять этим раскладом.\n"
+                "Я посмотрю и предложу формат по глубине и стоимости."
+            )
+        await query.message.reply_text(reply)
+    
     elif data.startswith("pack_select:"):
         # человек нажал "выбрать расклад"
         code = data.split(":", 1)[1]
@@ -1616,6 +1626,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
