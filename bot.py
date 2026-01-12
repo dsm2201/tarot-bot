@@ -872,7 +872,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🚀 Разворот в работе", callback_data="pack:career")],
             [InlineKeyboardButton("💞 Точка притяжения", callback_data="pack:love")],
         ]
-        await query.edit_message_text(
+        await query.message.reply_text(
             "Выбери расклад, который откликается:",
             reply_markup=InlineKeyboardMarkup(packs_keyboard),
         )
@@ -881,14 +881,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # показать описание выбранного расклада и кнопку "выбрать"
         code = data.split(":", 1)[1]
         title, desc, filename = get_pack_description(code)
-
+    
         text = f"{title}\n\n{desc}"
-
+    
         select_keyboard = [
             [InlineKeyboardButton("✅ Выбрать этот расклад", callback_data=f"pack_select:{code}")],
             [InlineKeyboardButton("⬅️ Назад к списку", callback_data="packs_menu")],
         ]
-
+    
         if filename:
             image_path = os.path.join(PACKS_DIR, filename)
             try:
@@ -898,15 +898,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         caption=text,
                         reply_markup=InlineKeyboardMarkup(select_keyboard),
                     )
-                await query.edit_message_reply_markup(reply_markup=None)
             except FileNotFoundError:
                 print(f"pack image not found: {image_path}")
-                await query.edit_message_text(
+                await query.message.reply_text(
                     text,
                     reply_markup=InlineKeyboardMarkup(select_keyboard),
                 )
         else:
-            await query.edit_message_text(
+            await query.message.reply_text(
                 text,
                 reply_markup=InlineKeyboardMarkup(select_keyboard),
             )
@@ -1571,7 +1570,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_menu))
-    application.add_handler(CommandHandler("test_day_card", test_day_card))
+    app.add_handler(CommandHandler("test_day_card", test_day_card))
     app.add_handler(CommandHandler("debug_notify", debug_notify))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
@@ -1603,6 +1602,9 @@ def main():
         time=time(5, 0),   # 05:00 UTC ≈ 08:00 по Москве
         name="daily_reminder",
     )
+
+# тут как раз запуск веб‑сервиса на Render
+    
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
@@ -1614,6 +1616,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
