@@ -65,11 +65,13 @@ GS_USERS_WS = None
 GS_ACTIONS_WS = None
 GS_NURTURE_WS = None
 GS_CARD_OF_DAY_WS = None
+GS_PACKS_WS = None
+PACKS_DATA = {}  # словарь: {code: {title, emoji, description, filename}}
 
 
 def init_gs_client():
     """Инициализация клиента gspread из JSON в переменной окружения."""
-    global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS, GS_CARD_OF_DAY_WS
+    global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS, GS_CARD_OF_DAY_WS, GS_PACKS_WS
 
     if not GS_SERVICE_JSON or not GS_SHEET_ID:
         print(">>> Google Sheets: переменные GS_SERVICE_JSON / GS_SHEET_ID не заданы.")
@@ -81,15 +83,15 @@ def init_gs_client():
         sheet = client.open_by_key(GS_SHEET_ID)
         users_ws = sheet.worksheet(USERS_SHEET_NAME)
         actions_ws = sheet.worksheet(ACTIONS_SHEET_NAME)
-        try:
-            nurture_ws = sheet.worksheet(NURTURE_SHEET_NAME)
-        except Exception:
-            nurture_ws = None
+    try:
+        nurture_ws = sheet.worksheet(NURTURE_SHEET_NAME)
+    except Exception:
+        nurture_ws = None
 
-        try:
-            card_of_day_ws = sheet.worksheet(CARD_OF_DAY_SHEET_NAME)
-        except Exception:
-            card_of_day_ws = None
+    try:
+        card_of_day_ws = sheet.worksheet(CARD_OF_DAY_SHEET_NAME)
+    except Exception:
+        card_of_day_ws = None
 
         GS_CLIENT = client
         GS_SHEET = sheet
@@ -97,6 +99,7 @@ def init_gs_client():
         GS_ACTIONS_WS = actions_ws
         GS_NURTURE_WS = nurture_ws
         GS_CARD_OF_DAY_WS = card_of_day_ws
+        GS_PACKS_WS = packs_ws
         print(">>> Google Sheets: успешно подключено к tatiataro_log.")
     except Exception as e:
         print(f">>> Google Sheets init error: {e}")
@@ -106,13 +109,38 @@ def init_gs_client():
         GS_ACTIONS_WS = None
         GS_NURTURE_WS = None
         GS_CARD_OF_DAY_WS = None
-
+    try:
+        packs_ws = sheet.worksheet("packs")
+    except Exception:
+        packs_ws = None
 
 def load_json(name):
     path = os.path.join(TEXTS_DIR, name)
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+def load_packs_from_sheets():
+    """Загружаем расклады из листа 'packs' в Google Sheets."""
+    global PACKS_DATA
+    if GS_PACKS_WS is None:
+        print(">>> load_packs_from_sheets: лист 'packs' не найден")
+        return
+    try:
+        records = GS_PACKS_WS.get_all_records()
+        PACKS_DATA = {}
+        for row in records:
+            code = row.get("code", "").strip()
+            if not code:
+                continue
+            PACKS_DATA[code] = {
+                "emoji": row.get("emoji", "").strip(),
+                "title": row.get("title", "").strip(),
+                "description": row.get("description", "").strip(),
+                "filename": row.get("filename", "").strip(),
+            }
+        print(f">>> load_packs_from_sheets: загружено {len(PACKS_DATA)} раскладов")
+    except Exception as e:
+        print(f">>> load_packs_from_sheets error: {e}")
 
 CARDS = load_json("cards.json")
 NURTURE_UNSUB = load_json("nurture_unsub.json")
@@ -413,79 +441,12 @@ def build_main_keyboard(user_data: dict) -> InlineKeyboardMarkup:
 
 
 def get_pack_description(code: str) -> tuple[str, str, str]:
-    """Название, описание и имя файла расклада по коду."""
-    if code == "grapes12":
-        title = "🍇 «12 виноградин» — Новогодний ритуал"
-        desc = (
-            "12 виноградин — 12 желаний на новый год.\n\n"
-            "Мы смотрим, какие темы года просятся в твою жизнь, где важно загадать желание, "
-            "а где — отпустить ожидания и освободить место под новое."
-        )
-        filename = "grapes12.jpg"
-    elif code == "bye_year":
-        title = "👋 «Прощай, уходящий год»"
-        desc = (
-            "Мягкий разбор уходящего года: что забрать с собой как ресурс, "
-            "что оставить, и какие уроки уже пройдены.\n\n"
-            "Подходит, если хочется закрыть хвосты, перестать вариться в прошлом "
-            "и перейти в новый год легче."
-        )
-        filename = "bye_year.jpg"
-    elif code == "mission":
-        title = "🌟 «Луч миссии» — Предназначение"
-        desc = (
-            "Расклад про твоё внутреннее направление: в чём твой смысл, "
-            "через что ты естественно проявляешься и где теряется опора.\n\n"
-            "Помогает поймать ориентир, если кажется, что живёшь не своей жизнью."
-        )
-        filename = "mission.jpg"
-    elif code == "anchor":
-        title = "🪨 «Точка опоры» — Состояние и ресурс"
-        desc = (
-            "Смотрим, на что ты сейчас опираешься внутри и снаружи, "
-            "какие ресурсы уже есть, а какие проседают.\n\n"
-            "Подходит, когда шатает, накрывают качели и хочется устойчивости."
-        )
-        filename = "anchor.jpg"
-    elif code == "money":
-        title = "💰 «Финансовый ключ» — Деньги и благополучие"
-        desc = (
-            "Расклад про деньги: твои установки, сценарии и точки роста.\n\n"
-            "Помогает увидеть, где ты сам себе перекрываешь поток, а где есть реальные "
-            "возможности для увеличения дохода."
-        )
-        filename = "money.jpg"
-    elif code == "choice":
-        title = "🧭 «Компас выбора» — Выбор и развилки"
-        desc = (
-            "Когда стоишь на развилке и не понимаешь, куда свернуть.\n\n"
-            "Смотрим, что стоит за каждым вариантом, какие последствия у выбора "
-            "и где больше жизни и ресурса для тебя."
-        )
-        filename = "choice.jpg"
-    elif code == "career":
-        title = "🚀 «Разворот в работе» — Карьера и успех"
-        desc = (
-            "Расклад про работу, карьеру и самореализацию.\n\n"
-            "Подходит, если хочется перемен в профессии, перехода в новое дело "
-            "или ясности, в какую сторону разворачиваться."
-        )
-        filename = "career.jpg"
-    elif code == "love":
-        title = "💞 «Точка притяжения» — Любовь и отношения"
-        desc = (
-            "Расклад про твою точку притяжения в отношениях: каких партнёров ты притягиваешь, "
-            "какой динамике склонна пара и где твоя зона влияния.\n\n"
-            "Подходит и для текущих отношений, и для запроса «почему не складывается»."
-        )
-        filename = "love.jpg"
+    """Получаем описание расклада из загруженных данных."""
+    if code in PACKS_DATA:
+        pack = PACKS_DATA[code]
+        return pack["title"], pack["description"], pack["filename"]
     else:
-        title = "Расклад"
-        desc = "Описание этого расклада появится чуть позже."
-        filename = ""
-    
-    return title, desc, filename
-
+        return "Расклад", "Описание этого расклада появится чуть позже.", ""
 
 # ===== отправка картинок =====
 
@@ -873,23 +834,26 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
-    elif data == "packs_menu":
-        # подменю с раскладами
+   elif data == "packs_menu":
+        # подменю с раскладами (генерируем из PACKS_DATA)
         packs_keyboard = [
             [InlineKeyboardButton("📝 Свой запрос", callback_data="pack:other")],
-            [InlineKeyboardButton("🍇 12 виноградин", callback_data="pack:grapes12")],
-            [InlineKeyboardButton("👋 Прощай, уходящий год", callback_data="pack:bye_year")],
-            [InlineKeyboardButton("🌟 Луч миссии", callback_data="pack:mission")],
-            [InlineKeyboardButton("🪨 Точка опоры", callback_data="pack:anchor")],
-            [InlineKeyboardButton("💰 Финансовый ключ", callback_data="pack:money")],
-            [InlineKeyboardButton("🧭 Компас выбора", callback_data="pack:choice")],
-            [InlineKeyboardButton("🚀 Разворот в работе", callback_data="pack:career")],
-            [InlineKeyboardButton("💞 Точка притяжения", callback_data="pack:love")],
         ]
+        # Добавляем кнопки раскладов из Google Sheets
+        for code in PACKS_DATA.keys():
+            pack = PACKS_DATA[code]
+            emoji = pack.get("emoji", "")
+            title = pack.get("title", "").split(" — ")[0]  # берём только до " — "
+            button_text = f"{emoji} {title}"
+            packs_keyboard.append(
+                [InlineKeyboardButton(button_text, callback_data=f"pack:{code}")]
+            )
+        
         await query.message.reply_text(
-            "Выбери расклад, который откликается или нажми «Свой вопрос:",
+            "Выбери расклад, который откликается или нажми «Свой вопрос»:",
             reply_markup=InlineKeyboardMarkup(packs_keyboard),
-        )
+    )
+
         
     elif data == "pack:other":
         # Свой запрос — ЭТОТ БЛОК ДОЛЖЕН БЫТЬ ЗДЕСЬ, ДО startswith!
@@ -1626,6 +1590,7 @@ def main():
 
     # инициализируем Google Sheets
     init_gs_client()
+    load_packs_from_sheets()
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -1677,6 +1642,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
