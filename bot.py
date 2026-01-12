@@ -572,6 +572,26 @@ async def send_card_of_the_day_to_channel(context: ContextTypes.DEFAULT_TYPE):
     file_name = card_data.get("file_name", "").strip()
     card_title = card_data.get("card_title", "").strip()
     text = card_data.get("text", "").strip()
+
+    # Генерируем заголовок с датой и днём
+    now = datetime.now(UTC)
+    
+    months_ru = {
+        1: "января", 2: "февраля", 3: "марта", 4: "апреля",
+        5: "мая", 6: "июня", 7: "июля", 8: "августа",
+        9: "сентября", 10: "октября", 11: "ноября", 12: "декабря"
+    }
+    
+    day = now.day
+    month = months_ru[now.month]
+    days_ru = {
+        0: "Понедельник", 1: "Вторник", 2: "Среда", 3: "Четверг",
+        4: "Пятница", 5: "Суббота", 6: "Воскресенье"
+    }
+    weekday = days_ru[now.weekday()]
+    
+    header = f"{day} {month} 🔔 {weekday}\n\n"
+    text = header + text
     
     if not file_name or not text:
         print(">>> send_card_of_the_day_to_channel: неполные данные в Sheets")
@@ -1664,6 +1684,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
