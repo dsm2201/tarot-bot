@@ -479,6 +479,14 @@ def get_pack_description(code: str) -> tuple[str, str, str]:
             "Подходит и для текущих отношений, и для запроса «почему не складывается»."
         )
         filename = "love.jpg"
+     elif code == "other":
+        title = "Свой запрос"
+        desc = (
+            "Поймала твой запрос на расклад «{title}». 💫\n\n"
+            "Напиши пару слов про свою ситуацию и что хочешь понять этим раскладом.\n"
+            "Я посмотрю и предложу формат по глубине и стоимости.\n\n"
+            "Для связи пиши мне в ЛС @Tatiataro18"
+        )
 
     return title, desc, filename
 
@@ -873,7 +881,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "packs_menu":
         # подменю с раскладами
         packs_keyboard = [
-            [InlineKeyboardButton("📝 Свой вопрос", callback_data="pack:other")],
+            [InlineKeyboardButton("📝 Свой запрос", callback_data="pack:other")],
             [InlineKeyboardButton("🍇 12 виноградин", callback_data="pack:grapes12")],
             [InlineKeyboardButton("👋 Прощай, уходящий год", callback_data="pack:bye_year")],
             [InlineKeyboardButton("🌟 Луч миссии", callback_data="pack:mission")],
@@ -1645,6 +1653,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
