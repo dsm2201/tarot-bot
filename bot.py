@@ -831,7 +831,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
-   elif data == "packs_menu":
+    elif data == "packs_menu":
         # подменю с раскладами (генерируем из PACKS_DATA)
         packs_keyboard = [
             [InlineKeyboardButton("📝 Свой запрос", callback_data="pack:other")],
@@ -1639,6 +1639,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
