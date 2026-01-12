@@ -70,36 +70,36 @@ PACKS_DATA = {}  # словарь: {code: {title, emoji, description, filename}}
 
 
 def init_gs_client():
-    """Инициализация клиента gspread из JSON в переменной окружения."""
     global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS, GS_CARD_OF_DAY_WS, GS_PACKS_WS
-
     if not GS_SERVICE_JSON or not GS_SHEET_ID:
         print(">>> Google Sheets: переменные GS_SERVICE_JSON / GS_SHEET_ID не заданы.")
         return
-
     try:
         info = json.loads(GS_SERVICE_JSON)
         client = service_account_from_dict(info)
         sheet = client.open_by_key(GS_SHEET_ID)
         users_ws = sheet.worksheet(USERS_SHEET_NAME)
         actions_ws = sheet.worksheet(ACTIONS_SHEET_NAME)
-    try:
-        nurture_ws = sheet.worksheet(NURTURE_SHEET_NAME)
-    except Exception:
-        nurture_ws = None
-
-    try:
-        card_of_day_ws = sheet.worksheet(CARD_OF_DAY_SHEET_NAME)
-    except Exception:
-        card_of_day_ws = None
-
+        try:
+            nurture_ws = sheet.worksheet(NURTURE_SHEET_NAME)
+        except Exception:
+            nurture_ws = None
+        try:
+            card_of_day_ws = sheet.worksheet(CARD_OF_DAY_SHEET_NAME)
+        except Exception:
+            card_of_day_ws = None
+        try:
+            packs_ws = sheet.worksheet("packs")  # <- ЭТОТ БЛОК
+        except Exception:
+            packs_ws = None
+        
         GS_CLIENT = client
         GS_SHEET = sheet
         GS_USERS_WS = users_ws
         GS_ACTIONS_WS = actions_ws
         GS_NURTURE_WS = nurture_ws
         GS_CARD_OF_DAY_WS = card_of_day_ws
-        GS_PACKS_WS = packs_ws
+        GS_PACKS_WS = packs_ws  # <- И ПРИСВАИВАНИЕ
         print(">>> Google Sheets: успешно подключено к tatiataro_log.")
     except Exception as e:
         print(f">>> Google Sheets init error: {e}")
@@ -109,10 +109,7 @@ def init_gs_client():
         GS_ACTIONS_WS = None
         GS_NURTURE_WS = None
         GS_CARD_OF_DAY_WS = None
-    try:
-        packs_ws = sheet.worksheet("packs")
-    except Exception:
-        packs_ws = None
+        GS_PACKS_WS = None
 
 def load_json(name):
     path = os.path.join(TEXTS_DIR, name)
@@ -1642,6 +1639,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
