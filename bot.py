@@ -633,6 +633,18 @@ async def send_card_of_the_day_to_channel(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f">>> send_card_of_the_day_to_channel error: {e}")
 
+async def test_day_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ручной запуск карты дня только для админа."""
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text("Эта команда только для администратора.")
+        return
+
+    await update.message.reply_text("Пробую отправить карту дня в канал...")
+    await send_card_of_the_day_to_channel(context)
+    await update.message.reply_text("Готово (если в логах нет ошибок).")
+
+
 def update_nurture_subscribed_after():
     """Проставляем subscribed_after в nurture по актуальному статусу подписки из users."""
     if GS_NURTURE_WS is None or GS_USERS_WS is None:
@@ -823,6 +835,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Эта функция только для администратора.", show_alert=True)
             return
     
+        # Статус карты дня
         cod_status = "🤖 Авто" if CARD_OF_DAY_STATUS.get("enabled", True) else "👋 Ручная"
     
         keyboard = [
@@ -839,11 +852,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
         ]
     
-        # вместо edit_message_text
+        # Важно: отправляем новое сообщение, а не редактируем старое
         await query.message.reply_text(
             "Админ‑меню:",
             reply_markup=InlineKeyboardMarkup(keyboard),
-    )
+        )
+
 
 
     elif data == "packs_menu":
@@ -1557,6 +1571,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_menu))
+    application.add_handler(CommandHandler("test_day_card", test_day_card))
     app.add_handler(CommandHandler("debug_notify", debug_notify))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
@@ -1599,6 +1614,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
