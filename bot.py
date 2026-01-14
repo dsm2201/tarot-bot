@@ -411,13 +411,13 @@ def _normalize_daily_counters(user_data: dict):
 def get_meta_left(user_data: dict) -> int:
     _normalize_daily_counters(user_data)
     used = user_data.get("meta_used", 0)
-    return max(0, 3 - used)
+    return max(0, 1 - used)
 
 
 def get_dice_left(user_data: dict) -> int:
     _normalize_daily_counters(user_data)
     used = user_data.get("dice_used", 0)
-    return max(0, 3 - used)
+    return max(0, 1 - used)
 
 
 def build_main_keyboard(user_data: dict) -> InlineKeyboardMarkup:
@@ -815,7 +815,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "meta_card_today":
         meta_used = user_data.get("meta_used", 0)
-        if meta_used >= 3:
+        if meta_used >= 1:
             await query.answer("Сегодня попытки метафорических карт закончились.", show_alert=True)
         else:
             user_data["meta_used"] = meta_used + 1
@@ -827,7 +827,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "dice_today":
         dice_used = user_data.get("dice_used", 0)
-        if dice_used >= 3:
+        if dice_used >= 1:
             await query.answer("Сегодня попытки кубика выбора закончились.", show_alert=True)
         else:
             user_data["dice_used"] = dice_used + 1
@@ -1136,7 +1136,7 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_reply_markup(
             reply_markup=build_main_keyboard(user_data)
         )
-        await query.answer("Попытки обновлены до 3/3 для этого аккаунта.", show_alert=True)
+        await query.answer("Попытки обновлены до 1/1 для этого аккаунта.", show_alert=True)
         return
 
     # ===== nurture =====
@@ -1684,6 +1684,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
