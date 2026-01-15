@@ -841,25 +841,15 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id not in ADMIN_IDS:
             await query.answer("Эта функция только для администратора.", show_alert=True)
             return
-    
-        # Статус карты дня
-        cod_status = "🤖 Авто" if CARD_OF_DAY_STATUS.get("enabled", True) else "👋 Ручная"
-    
+        
         keyboard = [
-            [InlineKeyboardButton(f"📅 Карта дня: {cod_status}", callback_data="st:cod_status")],
-            [InlineKeyboardButton("📊 Сегодня: все карты", callback_data="st:today:all")],
-            [InlineKeyboardButton("📊 Сегодня: по карте", callback_data="st:today:cards")],
-            [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
-            [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
-            [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
-            [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
-            [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
-            [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
-            [InlineKeyboardButton("🧭 Действия: 7 дней", callback_data="st:actions:7days")],
+            [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
+            [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
+            [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
+            [InlineKeyboardButton("👥 Список пользователей", callback_data="st:users_list")],
             [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
         ]
-    
-        # Важно: отправляем новое сообщение, а не редактируем старое
+        
         await query.message.reply_text(
             "Админ‑меню:",
             reply_markup=InlineKeyboardMarkup(keyboard),
@@ -1068,16 +1058,10 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cod_status = "🤖 Авто" if CARD_OF_DAY_STATUS.get("enabled", True) else "👋 Ручная"
     
     keyboard = [
-        [InlineKeyboardButton(f"📅 Карта дня: {cod_status}", callback_data="st:cod_status")],
-        [InlineKeyboardButton("📊 Сегодня: все карты", callback_data="st:today:all")],
-        [InlineKeyboardButton("📊 Сегодня: по карте", callback_data="st:today:cards")],
-        [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
-        [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
-        [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
-        [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
-        [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
-        [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
-        [InlineKeyboardButton("🧭 Действия: 7 дней", callback_data="st:actions:7days")],
+        [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
+        [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
+        [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
+        [InlineKeyboardButton("👥 Список пользователей", callback_data="st:users_list")],
         [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
     ]
     await update.message.reply_text(
@@ -1109,8 +1093,45 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         
         await query.answer(f"Карта дня переведена в режим: {new_status}", show_alert=True)
         
+        # Возвращаем в подменю карты дня
         keyboard = [
-            [InlineKeyboardButton(f"📅 Карта дня: {new_status}", callback_data="st:cod_status")],
+            [InlineKeyboardButton(f"⚙️ Режим: {new_status}", callback_data="st:cod_status")],
+            [InlineKeyboardButton("🧪 Тестовая карта дня", callback_data="st:test_card")],
+            [InlineKeyboardButton("⬅️ Назад в админ-меню", callback_data="st:menu")],
+        ]
+        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+        # ===== test_card =====
+    if action == "test_card":
+        await query.answer("Отправляю карту дня в канал...", show_alert=True)
+        await send_card_of_the_day_to_channel(context)
+        return
+    
+    # ===== reload_packs =====
+    if action == "reload_packs":
+        load_packs_from_sheets()
+        count = len(PACKS_DATA)
+        await query.answer(f"✅ Загружено {count} раскладов!", show_alert=True)
+        return
+    
+    # ===== card_menu =====
+    if action == "card_menu":
+        cod_status = "🤖 Авто" if CARD_OF_DAY_STATUS.get("enabled", True) else "👋 Ручная"
+        keyboard = [
+            [InlineKeyboardButton(f"⚙️ Режим: {cod_status}", callback_data="st:cod_status")],
+            [InlineKeyboardButton("🧪 Тестовая карта дня", callback_data="st:test_card")],
+            [InlineKeyboardButton("⬅️ Назад в админ-меню", callback_data="st:menu")],
+        ]
+        await query.edit_message_text(
+            "📅 Управление картой дня:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+    
+    # ===== stats_menu =====
+    if action == "stats_menu":
+        keyboard = [
             [InlineKeyboardButton("📊 Сегодня: все карты", callback_data="st:today:all")],
             [InlineKeyboardButton("📊 Сегодня: по карте", callback_data="st:today:cards")],
             [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
@@ -1120,11 +1141,14 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
             [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
             [InlineKeyboardButton("🧭 Действия: 7 дней", callback_data="st:actions:7days")],
-            [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
+            [InlineKeyboardButton("⬅️ Назад в админ-меню", callback_data="st:menu")],
         ]
-        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(
+            "📊 Статистика:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
         return
-
+     
     # ===== reset_attempts =====
     if action == "reset_attempts":
         user_data = context.user_data
@@ -1142,6 +1166,16 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
     # ===== nurture =====
     if action == "nurture":
         text = build_nurture_stats(days=7)
+        await query.edit_message_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            disable_web_page_preview=True,
+        )
+        return
+
+        # ===== users_list =====
+    if action == "users_list":
+        text = build_users_list()
         await query.edit_message_text(
             text,
             parse_mode=ParseMode.MARKDOWN_V2,
@@ -1428,8 +1462,131 @@ def build_nurture_stats(days: int = 7) -> str:
 
     return "\n".join(lines)
 
+def build_users_list() -> str:
+    """Список пользователей с первым и последним входом."""
+    users = load_users()
+    if not users:
+        return esc_md2("Пока нет пользователей в боте.")
+    
+    by_user = {}
+    for row in users:
+        uid = row["user_id"].strip()
+        if not uid:
+            continue
+        
+        dt = parse_iso(row["date_iso"])
+        if dt is None:
+            continue
+        
+        username = row.get("username", "").strip()
+        first_name = row.get("first_name", "").strip()
+        
+        if uid not in by_user:
+            by_user[uid] = {
+                "username": username,
+                "first_name": first_name,
+                "first_dt": dt,
+                "last_dt": dt,
+            }
+        else:
+            if dt < by_user[uid]["first_dt"]:
+                by_user[uid]["first_dt"] = dt
+            if dt > by_user[uid]["last_dt"]:
+                by_user[uid]["last_dt"] = dt
+    
+    if not by_user:
+        return esc_md2("Нет корректных данных о пользователях.")
+    
+    lines = []
+    lines.append(esc_md2(f"Всего уникальных пользователей: {len(by_user)}"))
+    lines.append("")
+    lines.append(esc_md2("Первый вход | Последний вход | Пользователь"))
+    lines.append("")
+    
+    for uid in sorted(by_user.keys()):
+        info = by_user[uid]
+        first = info["first_dt"].strftime("%Y-%m-%d %H:%M")
+        last = info["last_dt"].strftime("%Y-%m-%d %H:%M")
+        
+        username = info["username"]
+        first_name = info["first_name"]
+        
+        if username:
+            name_part = f"@{username}"
+        elif first_name:
+            name_part = f"{first_name} (id{uid})"
+        else:
+            name_part = f"id{uid}"
+        
+        line = f"{first} | {last} | {name_part}"
+        lines.append(esc_md2(line))
+    
+    return "\n".join(lines)
+    
+
 # ===== авто‑уведомления для админа =====
 
+def build_users_list() -> str:
+    """Список пользователей с первым и последним входом."""
+    users = load_users()
+    if not users:
+        return esc_md2("Пока нет пользователей в боте.")
+    
+    # Группируем по user_id, берём первый и последний вход
+    by_user = {}
+    for row in users:
+        uid = row["user_id"].strip()
+        if not uid:
+            continue
+        
+        dt = parse_iso(row["date_iso"])
+        if dt is None:
+            continue
+        
+        username = row.get("username", "").strip()
+        first_name = row.get("first_name", "").strip()
+        
+        if uid not in by_user:
+            by_user[uid] = {
+                "username": username,
+                "first_name": first_name,
+                "first_dt": dt,
+                "last_dt": dt,
+            }
+        else:
+            if dt < by_user[uid]["first_dt"]:
+                by_user[uid]["first_dt"] = dt
+            if dt > by_user[uid]["last_dt"]:
+                by_user[uid]["last_dt"] = dt
+    
+    if not by_user:
+        return esc_md2("Нет корректных данных о пользователях.")
+    
+    lines = []
+    lines.append(esc_md2(f"Всего уникальных пользователей: {len(by_user)}"))
+    lines.append("")
+    lines.append(esc_md2("Первый вход | Последний вход | Пользователь"))
+    lines.append("")
+    
+    for uid in sorted(by_user.keys()):
+        info = by_user[uid]
+        first = info["first_dt"].strftime("%Y-%m-%d %H:%M")
+        last = info["last_dt"].strftime("%Y-%m-%d %H:%M")
+        
+        username = info["username"]
+        first_name = info["first_name"]
+        
+        if username:
+            name_part = f"@{username}"
+        elif first_name:
+            name_part = f"{first_name} (id{uid})"
+        else:
+            name_part = f"id{uid}"
+        
+        line = f"{first} | {last} | {name_part}"
+        lines.append(esc_md2(line))
+    
+    return "\n".join(lines)
 
 async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
     now = datetime.now(UTC)
@@ -1684,6 +1841,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
