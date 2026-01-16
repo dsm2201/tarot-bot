@@ -954,16 +954,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text,
                 reply_markup=InlineKeyboardMarkup(select_keyboard),
             )
-            
-    elif data == "pack:other":
-    # Свой запрос — сразу переходим к запросу описания (как в pack_select)
-        reply = (
-            "Поймала твой запрос на расклад «Расклад». 💫\n\n"
-            "Напиши пару слов про свою ситуацию и что хочешь понять этим раскладом.\n"
-            "Я посмотрю и предложу формат по глубине и стоимости.\n\n"
-            "Для связи пиши мне в ЛС @Tatiataro18"
-        )
-        await query.message.reply_text(reply)
 
     elif data.startswith("pack_select:"):
         # человек нажал "выбрать расклад"
@@ -1559,79 +1549,6 @@ def build_users_list(sort_by="last") -> str:
 
 # ===== авто‑уведомления для админа =====
 
-def build_users_list(sort_by="last") -> str:
-    """Список пользователей с первым и последним входом."""
-    users = load_users()
-    if not users:
-        return esc_md2("Пока нет пользователей в боте.")
-    
-    # Группируем по user_id, берём первый и последний вход
-    by_user = {}
-    for row in users:
-        uid = row["user_id"].strip()
-        if not uid:
-            continue
-        
-        dt = parse_iso(row["date_iso"])
-        if dt is None:
-            continue
-        
-        username = row.get("username", "").strip()
-        first_name = row.get("first_name", "").strip()
-        
-        if uid not in by_user:
-            by_user[uid] = {
-                "username": username,
-                "first_name": first_name,
-                "first_dt": dt,
-                "last_dt": dt,
-            }
-        else:
-            if dt < by_user[uid]["first_dt"]:
-                by_user[uid]["first_dt"] = dt
-            if dt > by_user[uid]["last_dt"]:
-                by_user[uid]["last_dt"] = dt
-    
-    if not by_user:
-        return esc_md2("Нет корректных данных о пользователях.")
-    
-    lines = []
-    lines.append(esc_md2(f"Всего уникальных пользователей: {len(by_user)}"))
-    lines.append("")
-    lines.append(esc_md2("Первый вход | Последний вход | Пользователь"))
-    lines.append("")
-    
-    # Сортировка зависит от параметра
-    if sort_by == "first":
-        lines.append(esc_md2("Сортировка: по первому входу (старые сверху)"))
-        sorted_users = sorted(by_user.items(), key=lambda x: x[1]["first_dt"])
-    else:
-        lines.append(esc_md2("Сортировка: по последнему входу (свежие сверху)"))
-        sorted_users = sorted(by_user.items(), key=lambda x: x[1]["last_dt"], reverse=True)
-    
-    lines.append("")
-    lines.append(esc_md2("Первый вход | Последний вход | Пользователь"))
-    lines.append("")
-    
-    for uid, info in sorted_users:
-        first = info["first_dt"].strftime("%Y-%m-%d %H:%M")
-        last = info["last_dt"].strftime("%Y-%m-%d %H:%M")
-        
-        username = info["username"]
-        first_name = info["first_name"]
-        
-        if username:
-            name_part = f"@{username}"
-        elif first_name:
-            name_part = f"{first_name} (id{uid})"
-        else:
-            name_part = f"id{uid}"
-        
-        line = f"{first} | {last} | {name_part}"
-        lines.append(esc_md2(line))
-    
-    return "\n".join(lines)
-
 async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
     now = datetime.now(UTC)
     last_ts = load_last_report_ts()
@@ -1885,6 +1802,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
