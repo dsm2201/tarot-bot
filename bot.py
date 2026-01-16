@@ -846,7 +846,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
             [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
             [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
-            [InlineKeyboardButton("👥 Список пользователей", callback_data="st:users_list")],
+            [InlineKeyboardButton("👥 Список пользователей →", callback_data="st:users_menu")],
             [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
         ]
         
@@ -1885,6 +1885,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
