@@ -1559,7 +1559,7 @@ def build_users_list(sort_by="last") -> str:
 
 # ===== авто‑уведомления для админа =====
 
-def build_users_list() -> str:
+def build_users_list(sort_by="last") -> str:
     """Список пользователей с первым и последним входом."""
     users = load_users()
     if not users:
@@ -1601,8 +1601,19 @@ def build_users_list() -> str:
     lines.append(esc_md2("Первый вход | Последний вход | Пользователь"))
     lines.append("")
     
-    for uid in sorted(by_user.keys()):
-        info = by_user[uid]
+    # Сортировка зависит от параметра
+    if sort_by == "first":
+        lines.append(esc_md2("Сортировка: по первому входу (старые сверху)"))
+        sorted_users = sorted(by_user.items(), key=lambda x: x[1]["first_dt"])
+    else:
+        lines.append(esc_md2("Сортировка: по последнему входу (свежие сверху)"))
+        sorted_users = sorted(by_user.items(), key=lambda x: x[1]["last_dt"], reverse=True)
+    
+    lines.append("")
+    lines.append(esc_md2("Первый вход | Последний вход | Пользователь"))
+    lines.append("")
+    
+    for uid, info in sorted_users:
         first = info["first_dt"].strftime("%Y-%m-%d %H:%M")
         last = info["last_dt"].strftime("%Y-%m-%d %H:%M")
         
@@ -1874,6 +1885,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
