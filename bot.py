@@ -1110,7 +1110,7 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         cod_status = "🤖 Авто" if CARD_OF_DAY_STATUS.get("enabled", True) else "👋 Ручная"
         keyboard = [
             [InlineKeyboardButton(f"⚙️ Режим: {cod_status}", callback_data="st:cod_status")],
-            [InlineKeyboardButton("🧪 Тестовая карта дня", callback_data="st:test_card")],
+            [InlineKeyboardButton("🧪 Отправить карту дня в канал", callback_data="st:test_card")],
             [InlineKeyboardButton("⬅️ Назад в админ-меню", callback_data="st:menu")],
         ]
         await query.edit_message_text(
@@ -1802,6 +1802,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
