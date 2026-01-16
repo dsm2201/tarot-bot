@@ -1061,7 +1061,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
         [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
         [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
-        [InlineKeyboardButton("👥 Список пользователей", callback_data="st:users_list")],
+        [InlineKeyboardButton("👥 Список пользователей →", callback_data="st:users_menu")],
         [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
     ]
     await update.message.reply_text(
@@ -1096,7 +1096,7 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         # Возвращаем в подменю карты дня
         keyboard = [
             [InlineKeyboardButton(f"⚙️ Режим: {new_status}", callback_data="st:cod_status")],
-            [InlineKeyboardButton("🧪 Тестовая карта дня", callback_data="st:test_card")],
+            [InlineKeyboardButton("🧪 Отправить карту дня", callback_data="st:test_card")],
             [InlineKeyboardButton("⬅️ Назад в админ-меню", callback_data="st:menu")],
         ]
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
@@ -1173,15 +1173,39 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-        # ===== users_list =====
-    if action == "users_list":
-        text = build_users_list()
+        # ===== users_menu =====
+    if action == "users_menu":
+        keyboard = [
+            [InlineKeyboardButton("🆕 По последнему входу", callback_data="st:users_last")],
+            [InlineKeyboardButton("📅 По первому входу", callback_data="st:users_first")],
+            [InlineKeyboardButton("⬅️ Назад в админ-меню", callback_data="st:menu")],
+        ]
+        await query.edit_message_text(
+            "👥 Список пользователей:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+    
+    # ===== users_last =====
+    if action == "users_last":
+        text = build_users_list(sort_by="last")
         await query.edit_message_text(
             text,
             parse_mode=ParseMode.MARKDOWN_V2,
             disable_web_page_preview=True,
         )
         return
+    
+    # ===== users_first =====
+    if action == "users_first":
+        text = build_users_list(sort_by="first")
+        await query.edit_message_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            disable_web_page_preview=True,
+        )
+        return
+
 
     # ===== actions =====
     if action == "actions":
@@ -1462,12 +1486,13 @@ def build_nurture_stats(days: int = 7) -> str:
 
     return "\n".join(lines)
 
-def build_users_list() -> str:
+def build_users_list(sort_by="last") -> str:
     """Список пользователей с первым и последним входом."""
     users = load_users()
     if not users:
         return esc_md2("Пока нет пользователей в боте.")
     
+    # Группируем по user_id, берём первый и последний вход
     by_user = {}
     for row in users:
         uid = row["user_id"].strip()
@@ -1500,11 +1525,20 @@ def build_users_list() -> str:
     lines = []
     lines.append(esc_md2(f"Всего уникальных пользователей: {len(by_user)}"))
     lines.append("")
+    
+    # Сортировка
+    if sort_by == "first":
+        lines.append(esc_md2("Сортировка: по первому входу (старые сверху)"))
+        sorted_users = sorted(by_user.items(), key=lambda x: x[1]["first_dt"])
+    else:
+        lines.append(esc_md2("Сортировка: по последнему входу (свежие сверху)"))
+        sorted_users = sorted(by_user.items(), key=lambda x: x[1]["last_dt"], reverse=True)
+    
+    lines.append("")
     lines.append(esc_md2("Первый вход | Последний вход | Пользователь"))
     lines.append("")
     
-    for uid in sorted(by_user.keys()):
-        info = by_user[uid]
+    for uid, info in sorted_users:
         first = info["first_dt"].strftime("%Y-%m-%d %H:%M")
         last = info["last_dt"].strftime("%Y-%m-%d %H:%M")
         
@@ -1522,7 +1556,6 @@ def build_users_list() -> str:
         lines.append(esc_md2(line))
     
     return "\n".join(lines)
-    
 
 # ===== авто‑уведомления для админа =====
 
@@ -1766,8 +1799,8 @@ async def daily_reminder_job(context: ContextTypes.DEFAULT_TYPE):
     text = (
         "Доброе утро! 🌅\n\n"
         "На сегодня снова доступны:\n"
-        "🃏 3 попытки вытянуть метафорическую карту\n"
-        "🎲 3 броска кубика выбора\n\n"
+        "🃏 1 попытка вытянуть метафорическую карту\n"
+        "🎲 1 бросок кубика выбора\n\n"
         "Нажми /start, чтобы начать свой день с подсказки и задать вопрос.\n"
         "Если чувствуешь, что ситуация повторяется — можно сделать индивидуальный развернутый расклад, "
         "просто напиши «РАСКЛАД» в ответ на сообщение бота."
@@ -1841,6 +1874,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
