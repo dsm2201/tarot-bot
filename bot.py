@@ -421,19 +421,19 @@ def _normalize_daily_counters(user_dict):
     user_data.setdefault("dice_used", 0)
 
 
-def get_meta_left(user_ dict) -> int:
+def get_meta_left(user_dict) -> int:
     _normalize_daily_counters(user_data)
     used = user_data.get("meta_used", 0)
     return max(0, 1 - used)
 
 
-def get_dice_left(user_ dict) -> int:
+def get_dice_left(user_dict) -> int:
     _normalize_daily_counters(user_data)
     used = user_data.get("dice_used", 0)
     return max(0, 1 - used)
 
 
-def build_main_keyboard(user_ dict) -> InlineKeyboardMarkup:
+def build_main_keyboard(user_dict) -> InlineKeyboardMarkup:
     meta_left = get_meta_left(user_data)
     dice_left = get_dice_left(user_data)
 
@@ -1773,4 +1773,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
