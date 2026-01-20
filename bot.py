@@ -210,74 +210,82 @@ def save_last_report_ts(ts: datetime):
 
 # ===== логирование в Google Sheets =====
 
-@handle_errors
 def log_start_to_sheet(user, card_key: str | None):
     """Лог входа пользователя в лист users."""
     if GS_USERS_WS is None:
         return
-    date_iso = datetime.now(UTC).isoformat(timespec="seconds")
-    row = [
-        str(user.id),
-        user.username or "",
-        user.first_name or "",
-        card_key or "",
-        date_iso,
-        "unsub",
-    ]
-    GS_USERS_WS.append_row(row, value_input_option="RAW")
+    try:
+        date_iso = datetime.now(UTC).isoformat(timespec="seconds")
+        row = [
+            str(user.id),
+            user.username or "",
+            user.first_name or "",
+            card_key or "",
+            date_iso,
+            "unsub",
+        ]
+        GS_USERS_WS.append_row(row, value_input_option="RAW")
+    except Exception as e:
+        logger.error(f"log_start_to_sheet error: {e}")
 
-@handle_errors
 def log_action_to_sheet(user, action: str, source: str = "unknown"):
     """Лог действия пользователя в лист actions."""
     if GS_ACTIONS_WS is None:
         return
-    ts_iso = datetime.now(UTC).isoformat(timespec="seconds")
-    row = [
-        str(user.id),
-        user.username or "",
-        user.first_name or "",
-        action,
-        source,
-        ts_iso,
-    ]
-    GS_ACTIONS_WS.append_row(row, value_input_option="RAW")
+    try:
+        ts_iso = datetime.now(UTC).isoformat(timespec="seconds")
+        row = [
+            str(user.id),
+            user.username or "",
+            user.first_name or "",
+            action,
+            source,
+            ts_iso,
+        ]
+        GS_ACTIONS_WS.append_row(row, value_input_option="RAW")
+    except Exception as e:
+        logger.error(f"log_action_to_sheet error: {e}")
 
-@handle_errors
 def log_nurture_to_sheet(user_id: int, card_key: str, segment: str,
                          day_num: int, status: str, error_msg: str = ""):
     """Лог nurture-сообщения в лист nurture."""
     if GS_NURTURE_WS is None:
         return
-    sent_at = datetime.now(UTC).isoformat(timespec="seconds")
-    row = [
-        str(user_id),
-        card_key,
-        segment,
-        str(day_num),
-        sent_at,
-        status,
-        error_msg,
-        "",  # subscribed_after
-    ]
-    GS_NURTURE_WS.append_row(row, value_input_option="RAW")
+    try:
+        sent_at = datetime.now(UTC).isoformat(timespec="seconds")
+        row = [
+            str(user_id),
+            card_key,
+            segment,
+            str(day_num),
+            sent_at,
+            status,
+            error_msg,
+            "",  # subscribed_after
+        ]
+        GS_NURTURE_WS.append_row(row, value_input_option="RAW")
+    except Exception as e:
+        logger.error(f"log_nurture_to_sheet error: {e}")
 
 # ===== чтение из Google Sheets =====
 
-@handle_errors
 def log_card_of_day_publish(card_name: str, mode: str = "auto"):
     """Логируем публикацию карты дня в Google Sheets."""
     if GS_ACTIONS_WS is None:
         return
-    ts_iso = datetime.now(UTC).isoformat(timespec="seconds")
-    row = [
-        "0",  # system
-        "bot",
-        "card_of_day",
-        f"card_of_day_publish_{card_name}",
-        mode,
-        ts_iso,
-    ]
-    GS_ACTIONS_WS.append_row(row, value_input_option="RAW")
+    try:
+        ts_iso = datetime.now(UTC).isoformat(timespec="seconds")
+        row = [
+            "0",  # system
+            "bot",
+            "card_of_day",
+            f"card_of_day_publish_{card_name}",
+            mode,
+            ts_iso,
+        ]
+        GS_ACTIONS_WS.append_row(row, value_input_option="RAW")
+    except Exception as e:
+        logger.error(f"log_card_of_day_publish error: {e}")
 
 def get_card_of_day_stats(days: int = 7) -> str:
     """Статистика по карте дня за последние N дней."""
@@ -318,75 +326,86 @@ def get_card_of_day_stats(days: int = 7) -> str:
     
     return "\n".join(lines)
 
-@handle_errors
 def load_users() -> list[dict]:
     """Читаем всех пользователей из листа users."""
     if GS_USERS_WS is None:
         return []
-    records = GS_USERS_WS.get_all_records()
-    # гарантируем строковые user_id
-    for r in records:
-        r["user_id"] = str(r.get("user_id", "")).strip()
-        r["card_key"] = (r.get("card_key") or "").strip()
-        r["date_iso"] = (r.get("date_iso") or "").strip()
-        r["subscribed"] = (r.get("subscribed") or "").strip()
-    return records
+    try:
+        records = GS_USERS_WS.get_all_records()
+        # гарантируем строковые user_id
+        for r in records:
+            r["user_id"] = str(r.get("user_id", "")).strip()
+            r["card_key"] = (r.get("card_key") or "").strip()
+            r["date_iso"] = (r.get("date_iso") or "").strip()
+            r["subscribed"] = (r.get("subscribed") or "").strip()
+        return records
+    except Exception as e:
+        logger.error(f"Error loading users from sheets: {e}")
+        return []
 
-@handle_errors
 def load_actions() -> list[dict]:
     """Читаем лог действий из листа actions."""
     if GS_ACTIONS_WS is None:
         return []
-    records = GS_ACTIONS_WS.get_all_records()
-    for r in records:
-        r["user_id"] = str(r.get("user_id", "")).strip()
-        r["action"] = (r.get("action") or "").strip()
-        r["source"] = (r.get("source") or "").strip()
-        r["ts_iso"] = (r.get("ts_iso") or "").strip()
-        r["username"] = (r.get("username") or "").strip()
-        r["first_name"] = (r.get("first_name") or "").strip()
-    return records
+    try:
+        records = GS_ACTIONS_WS.get_all_records()
+        for r in records:
+            r["user_id"] = str(r.get("user_id", "")).strip()
+            r["action"] = (r.get("action") or "").strip()
+            r["source"] = (r.get("source") or "").strip()
+            r["ts_iso"] = (r.get("ts_iso") or "").strip()
+            r["username"] = (r.get("username") or "").strip()
+            r["first_name"] = (r.get("first_name") or "").strip()
+        return records
+    except Exception as e:
+        logger.error(f"Error loading actions from sheets: {e}")
+        return []
 
-@handle_errors
 def load_nurture_rows() -> list[dict]:
     """Читаем nurture-лог из листа nurture."""
     if GS_NURTURE_WS is None:
         return []
-    records = GS_NURTURE_WS.get_all_records()
-    for r in records:
-        r["user_id"] = str(r.get("user_id", "")).strip()
-        r["card_key"] = (r.get("card_key") or "").strip()
-        r["segment"] = (r.get("segment") or "").strip()
-        r["day_num"] = str(r.get("day_num", "")).strip()
-        r["sent_at"] = (r.get("sent_at") or "").strip()
-        r["status"] = (r.get("status") or "").strip()
-        r["error_msg"] = (r.get("error_msg") or "").strip()
-        r["subscribed_after"] = (r.get("subscribed_after") or "").strip()
-    return records
+    try:
+        records = GS_NURTURE_WS.get_all_records()
+        for r in records:
+            r["user_id"] = str(r.get("user_id", "")).strip()
+            r["card_key"] = (r.get("card_key") or "").strip()
+            r["segment"] = (r.get("segment") or "").strip()
+            r["day_num"] = str(r.get("day_num", "")).strip()
+            r["sent_at"] = (r.get("sent_at") or "").strip()
+            r["status"] = (r.get("status") or "").strip()
+            r["error_msg"] = (r.get("error_msg") or "").strip()
+            r["subscribed_after"] = (r.get("subscribed_after") or "").strip()
+        return records
+    except Exception as e:
+        logger.error(f"Error loading nurture rows from sheets: {e}")
+        return []
 
 # ===== обновление статуса подписки в Sheets =====
 
-@handle_errors
 def update_subscribed_flag(user_id: int, is_sub: bool):
     """Обновляем поле subscribed для всех строк этого user_id в листе users."""
     if GS_USERS_WS is None:
         return
-    all_values = GS_USERS_WS.get_all_values()
-    if not all_values:
-        return
+    try:
+        all_values = GS_USERS_WS.get_all_values()
+        if not all_values:
+            return
 
-    header = all_values[0]
-    idx_id = header.index("user_id")
-    idx_sub = header.index("subscribed")
+        header = all_values[0]
+        idx_id = header.index("user_id")
+        idx_sub = header.index("subscribed")
 
-    target_id = str(user_id)
-    for i in range(1, len(all_values)):
-        row = all_values[i]
-        if len(row) <= max(idx_id, idx_sub):
-            continue
-        if row[idx_id].strip() == target_id:
-            row[idx_sub] = "sub" if is_sub else "unsub"
-            GS_USERS_WS.update_cell(i + 1, idx_sub + 1, row[idx_sub])
+        target_id = str(user_id)
+        for i in range(1, len(all_values)):
+            row = all_values[i]
+            if len(row) <= max(idx_id, idx_sub):
+                continue
+            if row[idx_id].strip() == target_id:
+                row[idx_sub] = "sub" if is_sub else "unsub"
+                GS_USERS_WS.update_cell(i + 1, idx_sub + 1, row[idx_sub])
+    except Exception as e:
+        logger.error(f"update_subscribed_flag error: {e}")
 
 # ===== лимиты попыток на день =====
 
