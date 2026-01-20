@@ -59,7 +59,6 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
 
 # Админы бота
-load_dotenv()
 
 ADMIN_ID1 = os.getenv('ADMIN_ID1')
 ADMIN_ID2 = os.getenv('ADMIN_ID2')
@@ -1755,6 +1754,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
