@@ -1,7 +1,3 @@
---- CORRECTED_BOT_FINAL.py (原始)
-
-
-+++ CORRECTED_BOT_FINAL.py (修改后)
 import os
 import random
 import csv
@@ -1786,3 +1782,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
