@@ -1533,7 +1533,7 @@ def build_users_list(sort_by="last") -> str:
 # ===== авто‑уведомления для админа =====
 
 @handle_errors
-def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
+async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
     now = datetime.now(UTC)
     last_ts = load_last_report_ts()
     users = load_users()
@@ -1783,3 +1783,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
