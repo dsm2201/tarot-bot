@@ -1044,6 +1044,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@handle_errors
 async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
     query = update.callback_query
     user = query.from_user
