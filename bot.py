@@ -102,11 +102,6 @@ def handle_errors(func):
                     pass
     return wrapper
 
-def load_json(name):
-    path = os.path.join(TEXTS_DIR, name)
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
 def init_gs_client():
     global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS, GS_CARD_OF_DAY_WS, GS_PACKS_WS
     if not GS_SERVICE_JSON or not GS_SHEET_ID:
@@ -149,6 +144,11 @@ def init_gs_client():
         GS_CARD_OF_DAY_WS = None
         GS_PACKS_WS = None
 
+def load_json(name):
+    path = os.path.join(TEXTS_DIR, name)
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
 def load_packs_from_sheets():
     """Загружаем расклады из листа 'packs' в Google Sheets."""
     global PACKS_DATA
@@ -171,6 +171,11 @@ def load_packs_from_sheets():
         print(f">>> load_packs_from_sheets: загружено {len(PACKS_DATA)} раскладов")
     except Exception as e:
         print(f">>> load_packs_from_sheets error: {e}")
+
+def load_json(name):
+    path = os.path.join(TEXTS_DIR, name)
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 CARDS = load_json("cards.json")
 NURTURE_UNSUB = load_json("nurture_unsub.json")
@@ -412,35 +417,35 @@ def update_subscribed_flag(user_id: int, is_sub: bool):
 def _normalize_daily_counters(user_dict):
     today = datetime.now(UTC).date()
 
-    last_meta_date = user_data.get("last_meta_date")
-    last_dice_date = user_data.get("last_dice_date")
+    last_meta_date = user_dict.get("last_meta_date")
+    last_dice_date = user_dict.get("last_dice_date")
 
     if last_meta_date != today:
-        user_data["last_meta_date"] = today
-        user_data["meta_used"] = 0
+        user_dict["last_meta_date"] = today
+        user_dict["meta_used"] = 0
     if last_dice_date != today:
-        user_data["last_dice_date"] = today
-        user_data["dice_used"] = 0
+        user_dict["last_dice_date"] = today
+        user_dict["dice_used"] = 0
 
-    user_data.setdefault("meta_used", 0)
-    user_data.setdefault("dice_used", 0)
+    user_dict.setdefault("meta_used", 0)
+    user_dict.setdefault("dice_used", 0)
 
 
 def get_meta_left(user_dict) -> int:
-    _normalize_daily_counters(user_data)
-    used = user_data.get("meta_used", 0)
+    _normalize_daily_counters(user_dict)
+    used = user_dict.get("meta_used", 0)
     return max(0, 1 - used)
 
 
 def get_dice_left(user_dict) -> int:
-    _normalize_daily_counters(user_data)
-    used = user_data.get("dice_used", 0)
+    _normalize_daily_counters(user_dict)
+    used = user_dict.get("dice_used", 0)
     return max(0, 1 - used)
 
 
 def build_main_keyboard(user_dict) -> InlineKeyboardMarkup:
-    meta_left = get_meta_left(user_data)
-    dice_left = get_dice_left(user_data)
+    meta_left = get_meta_left(user_dict)
+    dice_left = get_dice_left(user_dict)
 
     meta_text = f"🃏 Метафорическая карта ({meta_left})"
     dice_text = f"🎲 Кубик выбора ({dice_left})"
@@ -777,8 +782,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer()
 
-    user_data = context.user_data
-    _normalize_daily_counters(user_data)
+    user_dict = context.user_data
+    _normalize_daily_counters(user_dict)
 
     if data == "subscribe":
         await query.edit_message_text(
@@ -794,28 +799,28 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "meta_card_today":
-        meta_used = user_data.get("meta_used", 0)
+        meta_used = user_dict.get("meta_used", 0)
         if meta_used >= 1:
             await query.answer("Сегодня попытки метафорических карт закончились.", show_alert=True)
         else:
-            user_data["meta_used"] = meta_used + 1
+            user_dict["meta_used"] = meta_used + 1
             await send_random_meta_card(update, context)
             # лог действия
             log_action_to_sheet(user, "meta_card", "bot")
 
-        await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
+        await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_dict))
 
     elif data == "dice_today":
-        dice_used = user_data.get("dice_used", 0)
+        dice_used = user_dict.get("dice_used", 0)
         if dice_used >= 1:
             await query.answer("Сегодня попытки кубика выбора закончились.", show_alert=True)
         else:
-            user_data["dice_used"] = dice_used + 1
+            user_dict["dice_used"] = dice_used + 1
             await send_random_dice(update, context)
             # лог действия
             log_action_to_sheet(user, "dice", "bot")
 
-        await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
+        await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_dict))
 
     elif data == "st:menu":
         if user_id not in ADMIN_IDS:
@@ -1121,14 +1126,14 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     # ===== reset_attempts =====
     if action == "reset_attempts":
-        user_data = context.user_data
-        user_data["meta_used"] = 0
-        user_data["dice_used"] = 0
+        user_dict = context.user_data
+        user_dict["meta_used"] = 0
+        user_dict["dice_used"] = 0
         today = datetime.now(UTC).date()
-        user_data["last_meta_date"] = today
-        user_data["last_dice_date"] = today
+        user_dict["last_meta_date"] = today
+        user_dict["last_dice_date"] = today
         await query.edit_message_reply_markup(
-            reply_markup=build_main_keyboard(user_data)
+            reply_markup=build_main_keyboard(user_dict)
         )
         await query.answer("Попытки обновлены до 1/1 для этого аккаунта.", show_alert=True)
         return
@@ -1528,7 +1533,7 @@ def build_users_list(sort_by="last") -> str:
 # ===== авто‑уведомления для админа =====
 
 @handle_errors
-async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
+def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
     now = datetime.now(UTC)
     last_ts = load_last_report_ts()
     users = load_users()
@@ -1601,7 +1606,7 @@ async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = F
     save_last_report_ts(now)
 
 async def notify_admins(context: ContextTypes.DEFAULT_TYPE):
-    await notify_admins_once(context, force=False)
+    notify_admins_once(context, force=False)
 
 async def debug_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -1610,7 +1615,7 @@ async def debug_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text("Запускаю тестовое автоуведомление...")
-    await notify_admins_once(context, force=True)
+    notify_admins_once(context, force=True)
 
 # ===== автоворонка nurture (sub / unsub) =====
 
@@ -1778,4 +1783,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
