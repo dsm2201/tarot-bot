@@ -752,11 +752,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     # лог в Google Sheets
-    await log_start_to_sheet(user, card_key)
+    log_start_to_sheet(user, card_key)
 
     # лог действия (вход)
     action_name = "enter_from_channel" if source == "channel" else "enter_bot"
-    await log_action_to_sheet(user, action_name, source)
+    log_action_to_sheet(user, action_name, source)
 
     if update.message:
         await update.message.reply_text(text)
