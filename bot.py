@@ -404,7 +404,7 @@ def update_subscribed_flag(user_id: int, is_sub: bool):
 
 # ===== лимиты попыток на день =====
 
-def _normalize_daily_counters(user_ dict):
+def _normalize_daily_counters(user_dict):
     today = datetime.now(UTC).date()
 
     last_meta_date = user_data.get("last_meta_date")
@@ -1773,3 +1773,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
