@@ -585,7 +585,7 @@ async def send_card_of_the_day_to_channel(context: ContextTypes.DEFAULT_TYPE):
 async def test_day_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ручной запуск карты дня только для админа."""
     user = update.effective_user
-    if user.id not in [ADMIN_ID1, ADMIN_ID2]:
+    if user.id not in ADMIN_IDS:
         await update.message.reply_text("Эта команда только для администратора.")
         return
 
@@ -596,7 +596,7 @@ async def test_day_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reload_packs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Перезагружаем расклады из Google Sheets (только для админа)."""
     user = update.effective_user
-    if user.id not in [ADMIN_ID1, ADMIN_ID2]:
+    if user.id not in ADMIN_IDS:
         await update.message.reply_text("Эта команда только для администратора.")
         return
     
@@ -733,11 +733,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     # лог в Google Sheets
-    log_start_to_sheet(user, card_key)
+    await log_start_to_sheet(user, card_key)
 
     # лог действия (вход)
     action_name = "enter_from_channel" if source == "channel" else "enter_bot"
-    log_action_to_sheet(user, action_name, source)
+    await log_action_to_sheet(user, action_name, source)
 
     if update.message:
         await update.message.reply_text(text)
@@ -799,7 +799,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
 
     elif data == "st:menu":
-        if user_id not in [ADMIN_ID1, ADMIN_ID2]:
+        if user_id not in ADMIN_IDS:
             await query.answer("Эта функция только для администратора.", show_alert=True)
             return
         
@@ -859,7 +859,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"username: @{username if username else '—'}\n"
             f"имя: {first_name}"
         )
-        for admin_id in [ADMIN_ID1, ADMIN_ID2]:
+        for admin_id in ADMIN_IDS:
             try:
                 await context.bot.send_message(chat_id=admin_id, text=admin_msg)
             except Exception as e:
@@ -942,7 +942,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"username: @{username if username else '—'}\n"
             f"имя: {first_name}"
         )
-        for admin_id in [ADMIN_ID1, ADMIN_ID2]:
+        for admin_id in ADMIN_IDS:
             try:
                 await context.bot.send_message(chat_id=admin_id, text=admin_msg)
             except Exception as e:
@@ -990,7 +990,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"имя: {first_name}\n"
             f"текст: {text}"
         )
-        for admin_id in [ADMIN_ID1, ADMIN_ID2]:
+        for admin_id in ADMIN_IDS:
             try:
                 await context.bot.send_message(chat_id=admin_id, text=admin_msg)
             except Exception as e:
@@ -1000,7 +1000,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    if user.id not in [ADMIN_ID1, ADMIN_ID2]:
+    if user.id not in ADMIN_IDS:
         await update.message.reply_text("Эта команда только для администратора.")
         return
     
@@ -1028,7 +1028,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
     query = update.callback_query
     user = query.from_user
-    if user.id not in [ADMIN_ID1, ADMIN_ID2]:
+    if user.id not in ADMIN_IDS:
         await query.edit_message_text("Эта функция только для администратора.")
         return
 
@@ -1515,7 +1515,7 @@ async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = F
     if not users:
         if force:
             text = "🔔 Проверка автоуведомления.\nНовых переходов и подписчиков нет."
-            for admin_id in [ADMIN_ID1, ADMIN_ID2]:
+            for admin_id in ADMIN_IDS:
                 try:
                     await context.bot.send_message(chat_id=admin_id, text=text)
                 except Exception as e:
@@ -1572,7 +1572,7 @@ async def notify_admins_once(context: ContextTypes.DEFAULT_TYPE, force: bool = F
             lines.append(f"{ck}: {per_card_clicks[ck]}")
         text = "\n".join(lines)
 
-    for admin_id in [ADMIN_ID1, ADMIN_ID2]:
+    for admin_id in ADMIN_IDS:
         try:
             await context.bot.send_message(chat_id=admin_id, text=text)
         except Exception as e:
@@ -1585,7 +1585,7 @@ async def notify_admins(context: ContextTypes.DEFAULT_TYPE):
 
 async def debug_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    if user.id not in [ADMIN_ID1, ADMIN_ID2]:
+    if user.id not in ADMIN_IDS:
         await update.message.reply_text("Эта команда только для администратора.")
         return
 
@@ -1758,6 +1758,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
