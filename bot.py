@@ -144,6 +144,11 @@ def init_gs_client():
         GS_CARD_OF_DAY_WS = None
         GS_PACKS_WS = None
 
+def load_json(name):
+    path = os.path.join(TEXTS_DIR, name)
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
 def load_packs_from_sheets():
     """Загружаем расклады из листа 'packs' в Google Sheets."""
     global PACKS_DATA
@@ -404,7 +409,7 @@ def update_subscribed_flag(user_id: int, is_sub: bool):
 
 # ===== лимиты попыток на день =====
 
-def _normalize_daily_counters(user_dict):
+def _normalize_daily_counters(user_data):
     today = datetime.now(UTC).date()
 
     last_meta_date = user_data.get("last_meta_date")
@@ -421,19 +426,19 @@ def _normalize_daily_counters(user_dict):
     user_data.setdefault("dice_used", 0)
 
 
-def get_meta_left(user_dict) -> int:
+def get_meta_left(user_data) -> int:
     _normalize_daily_counters(user_data)
     used = user_data.get("meta_used", 0)
     return max(0, 1 - used)
 
 
-def get_dice_left(user_dict) -> int:
+def get_dice_left(user_data) -> int:
     _normalize_daily_counters(user_data)
     used = user_data.get("dice_used", 0)
     return max(0, 1 - used)
 
 
-def build_main_keyboard(user_dict) -> InlineKeyboardMarkup:
+def build_main_keyboard(user_data) -> InlineKeyboardMarkup:
     meta_left = get_meta_left(user_data)
     dice_left = get_dice_left(user_data)
 
@@ -540,7 +545,7 @@ def load_card_of_the_day() -> dict | None:
     return selected
 
 @handle_errors
-async def send_card_of_the_day_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def send_card_of_the_day_to_channel(context: ContextTypes.DEFAULT_TYPE):
     """Отправляет карту дня в канал если карта дня включена."""
     # Проверяем статус
     if not CARD_OF_DAY_STATUS.get("enabled", True):
@@ -604,7 +609,7 @@ async def test_day_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text("Пробую отправить карту дня в канал...")
-    await send_card_of_the_day_to_channel(update, context)
+    await send_card_of_the_day_to_channel(context)
     await update.message.reply_text("Готово (если в логах нет ошибок).")
 
 async def reload_packs(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -848,7 +853,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(
             "Выбери расклад, который откликается или нажми «Свой вопрос»:",
             reply_markup=InlineKeyboardMarkup(packs_keyboard),
-    )
+        )
 
 
         
@@ -1040,7 +1045,8 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE,  str):
+@handle_errors
+async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
     query = update.callback_query
     user = query.from_user
     if user.id not in ADMIN_IDS:
@@ -1070,7 +1076,7 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         # ===== test_card =====
     if action == "test_card":
         await query.answer("Отправляю карту дня в канал...", show_alert=True)
-        await send_card_of_the_day_to_channel(update, context)
+        await send_card_of_the_day_to_channel(context)
         return
 
     # ===== reload_packs =====
@@ -1205,12 +1211,15 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         y = now - timedelta(days=1)
         start_dt = y.replace(hour=0, minute=0, second=0, microsecond=0)
         end_dt = y.replace(hour=23, minute=59, second=59, microsecond=0)
+        period_str = f"{start_dt.date()}"
     elif action == "7days":
         start_dt = now - timedelta(days=7)
         end_dt = now
+        period_str = f"{start_dt.date()} — {end_dt.date()}"
     elif action == "alltime":
         start_dt = datetime(2000, 1, 1, tzinfo=UTC)
         end_dt = now
+        period_str = "за всё время"
     else:
         await query.edit_message_text("Неизвестное действие.")
         return
@@ -1224,7 +1233,7 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
 def build_actions_stats(period: str) -> str:
-    rows = load_actions()
+    rows = load_actions()  # Передаём оба параметра
     if not rows:
         return esc_md2("Лог действий пока пуст.")
 
@@ -1773,5 +1782,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
