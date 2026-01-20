@@ -146,26 +146,28 @@ def load_json(name):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-@handle_errors
 def load_packs_from_sheets():
     """Загружаем расклады из листа 'packs' в Google Sheets."""
     global PACKS_DATA
     if GS_PACKS_WS is None:
         print(">>> load_packs_from_sheets: лист 'packs' не найден")
         return
-    records = GS_PACKS_WS.get_all_records()
-    PACKS_DATA = {}
-    for row in records:
-        code = row.get("code", "").strip()
-        if not code:
-            continue
-        PACKS_DATA[code] = {
-            "emoji": row.get("emoji", "").strip(),
-            "title": row.get("title", "").strip(),
-            "description": row.get("description", "").strip(),
-            "filename": row.get("filename", "").strip(),
-        }
-    print(f">>> load_packs_from_sheets: загружено {len(PACKS_DATA)} раскладов")
+    try:
+        records = GS_PACKS_WS.get_all_records()
+        PACKS_DATA = {}
+        for row in records:
+            code = row.get("code", "").strip()
+            if not code:
+                continue
+            PACKS_DATA[code] = {
+                "emoji": row.get("emoji", "").strip(),
+                "title": row.get("title", "").strip(),
+                "description": row.get("description", "").strip(),
+                "filename": row.get("filename", "").strip(),
+            }
+        print(f">>> load_packs_from_sheets: загружено {len(PACKS_DATA)} раскладов")
+    except Exception as e:
+        print(f">>> load_packs_from_sheets error: {e}")
 
 CARDS = load_json("cards.json")
 NURTURE_UNSUB = load_json("nurture_unsub.json")
@@ -1753,6 +1755,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
