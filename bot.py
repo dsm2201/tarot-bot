@@ -1,3 +1,7 @@
+--- CORRECTED_BOT_FINAL.py (原始)
+
+
++++ CORRECTED_BOT_FINAL.py (修改后)
 import os
 import random
 import csv
@@ -292,38 +296,38 @@ def get_card_of_day_stats(days: int = 7) -> str:
     rows = load_actions()
     if not rows:
         return esc_md2("Статистика карты дня пока пуста.")
-    
+
     now = datetime.now(UTC)
     since = now - timedelta(days=days)
-    
+
     card_publishes = []
     for r in rows:
         ts_iso = r.get("ts_iso", "").strip()
         action = r.get("action", "").strip()
-        
+
         if "card_of_day" not in action:
             continue
-        
+
         ts = parse_iso(ts_iso)
         if ts is None or ts < since:
             continue
-        
+
         card_publishes.append(r)
-    
+
     if not card_publishes:
         return esc_md2(f"За последние {days} дней карта дня не публиковалась.")
-    
+
     total = len(card_publishes)
     auto_count = sum(1 for r in card_publishes if r.get("source") == "auto")
     manual_count = sum(1 for r in card_publishes if r.get("source") == "manual")
-    
+
     lines = []
     lines.append(esc_md2(f"Статистика карты дня за {days} дней"))
     lines.append("")
     lines.append(esc_md2(f"Всего публикаций: {total}"))
     lines.append(esc_md2(f"Автоматических (🤖): {auto_count}"))
     lines.append(esc_md2(f"Ручных (👋): {manual_count}"))
-    
+
     return "\n".join(lines)
 
 def load_users() -> list[dict]:
@@ -409,7 +413,7 @@ def update_subscribed_flag(user_id: int, is_sub: bool):
 
 # ===== лимиты попыток на день =====
 
-def _normalize_daily_counters(user_data: dict):
+def _normalize_daily_counters(user_data):
     today = datetime.now(UTC).date()
 
     last_meta_date = user_data.get("last_meta_date")
@@ -426,19 +430,19 @@ def _normalize_daily_counters(user_data: dict):
     user_data.setdefault("dice_used", 0)
 
 
-def get_meta_left(user_data: dict) -> int:
+def get_meta_left(user_data) -> int:
     _normalize_daily_counters(user_data)
     used = user_data.get("meta_used", 0)
     return max(0, 1 - used)
 
 
-def get_dice_left(user_data: dict) -> int:
+def get_dice_left(user_data) -> int:
     _normalize_daily_counters(user_data)
     used = user_data.get("dice_used", 0)
     return max(0, 1 - used)
 
 
-def build_main_keyboard(user_data: dict) -> InlineKeyboardMarkup:
+def build_main_keyboard(user_data) -> InlineKeyboardMarkup:
     meta_left = get_meta_left(user_data)
     dice_left = get_dice_left(user_data)
 
@@ -530,7 +534,7 @@ def load_card_of_the_day() -> dict | None:
     records = GS_CARD_OF_DAY_WS.get_all_records()
     if not records:
         return None
-    
+
     # Получаем веса
     weights = []
     for record in records:
@@ -539,7 +543,7 @@ def load_card_of_the_day() -> dict | None:
         if weight < 0:
             weight = 1
         weights.append(weight)
-    
+
     # Выбираем карту
     selected = random.choices(records, weights=weights, k=1)[0]
     return selected
@@ -551,25 +555,25 @@ async def send_card_of_the_day_to_channel(context: ContextTypes.DEFAULT_TYPE):
     if not CARD_OF_DAY_STATUS.get("enabled", True):
         print(">>> Карта дня отключена (ручной режим)")
         return
-    
+
     card_data = load_card_of_the_day()
     if card_data is None:
         print(">>> send_card_of_the_day_to_channel: нет данных")
         return
-    
+
     file_name = card_data.get("file_name", "").strip()
     card_title = card_data.get("card_title", "").strip()
     text = card_data.get("text", "").strip()
 
     # Генерируем заголовок с датой и днём
     now = datetime.now(UTC)
-    
+
     months_ru = {
         1: "января", 2: "февраля", 3: "марта", 4: "апреля",
         5: "мая", 6: "июня", 7: "июля", 8: "августа",
         9: "сентября", 10: "октября", 11: "ноября", 12: "декабря"
     }
-    
+
     day = now.day
     month = months_ru[now.month]
     days_ru = {
@@ -577,19 +581,19 @@ async def send_card_of_the_day_to_channel(context: ContextTypes.DEFAULT_TYPE):
         4: "Пятница", 5: "Суббота", 6: "Воскресенье"
     }
     weekday = days_ru[now.weekday()]
-    
+
     header = f"{day} {month} 🔔 {weekday}\n\n"
     text = header + text
-    
+
     if not file_name or not text:
         print(">>> send_card_of_the_day_to_channel: неполные данные в Sheets")
         return
-    
+
     image_path = os.path.join(CARD_OF_DAY_DIR, file_name)
     if not os.path.exists(image_path):
         print(f">>> send_card_of_the_day_to_channel: файл не найден {image_path}")
         return
-    
+
     with open(image_path, "rb") as f:
         await context.bot.send_photo(
             chat_id=CHANNEL_USERNAME,
@@ -618,10 +622,10 @@ async def reload_packs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id not in ADMIN_IDS:
         await update.message.reply_text("Эта команда только для администратора.")
         return
-    
+
     await update.message.reply_text("⏳ Перезагружаю расклады из Google Sheets...")
     load_packs_from_sheets()
-    
+
     if PACKS_DATA:
         await update.message.reply_text(f"✅ Загружено {len(PACKS_DATA)} раскладов!")
     else:
@@ -752,11 +756,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     # лог в Google Sheets
-    await log_start_to_sheet(user, card_key)
+    log_start_to_sheet(user, card_key)
 
     # лог действия (вход)
     action_name = "enter_from_channel" if source == "channel" else "enter_bot"
-    await log_action_to_sheet(user, action_name, source)
+    log_action_to_sheet(user, action_name, source)
 
     if update.message:
         await update.message.reply_text(text)
@@ -773,7 +777,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
     user_id = user.id
 
-    print(">>> button handler called, data:", data, "user_id:", user_id)
+    print(">>> button handler called, ", data, "user_id:", user_id)
 
     await query.answer()
 
@@ -821,7 +825,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id not in ADMIN_IDS:
             await query.answer("Эта функция только для администратора.", show_alert=True)
             return
-        
+
         keyboard = [
             [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
             [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
@@ -829,7 +833,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("👥 Список пользователей →", callback_data="st:users_menu")],
             [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
         ]
-        
+
         await query.message.reply_text(
             "Админ‑меню:",
             reply_markup=InlineKeyboardMarkup(keyboard),
@@ -849,14 +853,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             packs_keyboard.append(
                 [InlineKeyboardButton(button_text, callback_data=f"pack:{code}")]
             )
-        
+
         await query.message.reply_text(
             "Выбери расклад, который откликается или нажми «Свой вопрос»:",
             reply_markup=InlineKeyboardMarkup(packs_keyboard),
-    )
+        )
 
 
-        
+
     elif data == "pack:other":
         # Свой запрос — ЭТОТ БЛОК ДОЛЖЕН БЫТЬ ЗДЕСЬ, ДО startswith!
         reply = (
@@ -866,7 +870,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Для связи пиши мне в ЛС @Tatiataro18"
         )
         await query.message.reply_text(reply)
-        
+
         # уведомление админам
         user = query.from_user
         username = user.username or ""
@@ -884,27 +888,27 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(chat_id=admin_id, text=admin_msg)
             except Exception as e:
                 print(f"send pack_select notify error to {admin_id}: {e}")
-        
+
         # лог выбора расклада
         log_action_to_sheet(user, "pack_select_other", "bot")
-        
+
         # вернуть пользователя к главному меню
         await query.edit_message_reply_markup(
             reply_markup=build_main_keyboard(context.user_data)
         )
-    
+
     elif data.startswith("pack:"):
         # показать описание выбранного расклада и кнопку "выбрать"
         code = data.split(":", 1)[1]
         title, desc, filename = get_pack_description(code)
-    
+
         text = f"{title}\n\n{desc}"
-    
+
         select_keyboard = [
             [InlineKeyboardButton("✅ Выбрать этот расклад", callback_data=f"pack_select:{code}")],
             [InlineKeyboardButton("⬅️ Назад к списку", callback_data="packs_menu")],
         ]
-    
+
         if filename:
             # Проверяем, это URL или локальный файл
             if filename.startswith(("http://", "https://")):
@@ -1045,6 +1049,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@handle_errors
 async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
     query = update.callback_query
     user = query.from_user
@@ -1210,12 +1215,15 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         y = now - timedelta(days=1)
         start_dt = y.replace(hour=0, minute=0, second=0, microsecond=0)
         end_dt = y.replace(hour=23, minute=59, second=59, microsecond=0)
+        period_str = f"{start_dt.date()}"
     elif action == "7days":
         start_dt = now - timedelta(days=7)
         end_dt = now
+        period_str = f"{start_dt.date()} — {end_dt.date()}"
     elif action == "alltime":
         start_dt = datetime(2000, 1, 1, tzinfo=UTC)
         end_dt = now
+        period_str = "за всё время"
     else:
         await query.edit_message_text("Неизвестное действие.")
         return
@@ -1229,7 +1237,7 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
 def build_actions_stats(period: str) -> str:
-    rows = load_actions(update=None, context=None)  # Передаём update и context
+    rows = load_actions()  # Передаём оба параметра
     if not rows:
         return esc_md2("Лог действий пока пуст.")
 
