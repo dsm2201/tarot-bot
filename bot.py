@@ -37,31 +37,19 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-def handle_errors(func):
-    """Заменяет try/except во всех хэндлерах"""
-    @functools.wraps(func)
-    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
-        try:
-            return await func(update, context, *args, **kwargs)
-        except Exception as e:
-            logger.error(f"❌ {func.__name__}: {e}", exc_info=True)
-            # уведомление админам (опционально)
-            [ADMIN_ID1, ADMIN_ID2] = [os.getenv('ADMIN_ID1'), os.getenv('ADMIN_ID2')]
-            for admin_id in [ADMIN_ID1, ADMIN_ID2]:
-                if admin_id:
-                    try:
-                        await context.bot.send_message(int(admin_id), f"❌ {func.__name__}: {e}")
-                    except:
-                        pass  # не спамим если админ заблокировал
-    return wrapper
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
 
-# Админы бота
-
-ADMIN_ID1 = os.getenv('ADMIN_ID1')
-ADMIN_ID2 = os.getenv('ADMIN_ID2')
+# Админы (int для сравнения)
+ADMIN_IDS = [
+    int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",")
+    if id.strip()
+]
 
 # Канал
 CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME')    #@tatiataro
@@ -97,6 +85,22 @@ GS_NURTURE_WS = None
 GS_CARD_OF_DAY_WS = None
 GS_PACKS_WS = None
 PACKS_DATA = {}  # словарь: {code: {title, emoji, description, filename}}
+
+def handle_errors(func):
+    """Заменяет try/except во всех хэндлерах"""
+    @functools.wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        try:
+            return await func(update, context, *args, **kwargs)
+        except Exception as e:
+            logger.error(f"❌ {func.__name__}: {e}", exc_info=True)
+            # уведомление админам (используем ГЛОБАЛЬНУЮ ADMIN_IDS)
+            for admin_id in ADMIN_IDS:  # ✅ уже готовый список int!
+                try:
+                    await context.bot.send_message(admin_id, f"❌ {func.__name__}: {e}")
+                except:
+                    pass
+    return wrapper
 
 def init_gs_client():
     global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS, GS_CARD_OF_DAY_WS, GS_PACKS_WS
@@ -1754,6 +1758,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
