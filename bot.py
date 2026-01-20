@@ -1107,7 +1107,6 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("📊 Сегодня: по карте", callback_data="st:today:cards")],
             [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
             [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
-            [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
             [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
             [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
             [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
@@ -1782,4 +1781,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
