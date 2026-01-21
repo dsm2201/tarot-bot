@@ -843,7 +843,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             log_action_to_sheet(user, "meta_card", "bot")
 
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
-
+    
     elif data == "dice_today":
         dice_used = user_data.get("dice_used", 0)
         if dice_used >= 1:
@@ -863,7 +863,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         keyboard = [
             [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
-            [InlineKeyboardButton("🔄 Обновить расклады", callback_data="reload_packs")],
+            [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
             [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
             [InlineKeyboardButton("👥 Список пользователей →", callback_data="st:users_menu")],
             [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
@@ -873,6 +873,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Админ‑меню:",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+
+    elif data == "st:menu":
+        # меню админки с кнопкой "Обновить расклады"
+        keyboard = [...]
+        await query.message.reply_text(..., reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "packs_menu":
         # подменю с раскладами (генерируем из PACKS_DATA)
@@ -1068,7 +1073,7 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
-        [InlineKeyboardButton("🔄 Обновить расклады", callback_data="reload_packs")],
+        [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
         [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
         [InlineKeyboardButton("👥 Список пользователей →", callback_data="st:users_menu")],
         [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
@@ -1820,6 +1825,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
