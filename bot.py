@@ -632,36 +632,29 @@ async def test_day_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Готово (если в логах нет ошибок).")
 
 async def reload_packs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Расклады: команда + кнопка (st:reload_packs)"""
     user = update.effective_user
     query = update.callback_query
     
     if user.id not in ADMIN_IDS:
         if query:
-            await query.answer("❌ Только админ!", show_alert=True)
-        else:
-            await update.message.reply_text("❌ Только админ!")
+            await query.answer("❌ Только админ!")
         return
     
-    # "⏳ Загрузка..." 
+    # 🔄 ЛОГИКА ДЛЯ КНОПКИ
     if query:
         await query.answer("🔄 Обновляю...")
-        await query.edit_message_text("⏳ Перезагружаю...")
+        await query.message.edit_text("⏳ Перезагружаю...")  # ✅ query.message!
+        
+    # 🔄 ЛОГИКА ДЛЯ КОМАНДЫ  
     else:
         await update.message.reply_text("⏳ Перезагружаю...")
     
-    # Загрузка
     load_packs_from_sheets()
     count = len(PACKS_DATA)
-    
-    # Результат
-    if count > 0:
-        result = f"✅ Загружено **{count}** раскладов!"
-    else:
-        result = "⚠️ Расклады не загружены. Проверь лист 'packs'."
+    result = f"✅ Загружено **{count}** раскладов!" if count else "❌ Ошибка!"
     
     if query:
-        await query.edit_message_text(result, parse_mode=ParseMode.MARKDOWN_V2)
+        await query.message.edit_text(result, parse_mode=ParseMode.MARKDOWN_V2)  # ✅
     else:
         await update.message.reply_text(result)
 
@@ -1824,6 +1817,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
