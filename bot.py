@@ -885,7 +885,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"✅ Загружено {count}!", 
             show_alert=True  # всплывашка!
         )
-    return
+        return
 
     elif data == "packs_menu":
         # подменю с раскладами (генерируем из PACKS_DATA)
@@ -1832,6 +1832,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
