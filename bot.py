@@ -867,12 +867,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
 
-        elif data == "st:menu":
-            if user_id not in ADMIN_IDS:
-                await query.answer("❌ Только админ!", show_alert=True)
-                return
-            await query.message.reply_text("⚙️ Админ-панель:",
-        reply_markup=get_admin_keyboard())
+    elif data == "st:menu":
+        if user_id not in ADMIN_IDS:
+            await query.answer("❌ Только админ!", show_alert=True)
+            return
+        await query.message.reply_text("⚙️ Админ-панель:",
+    reply_markup=get_admin_keyboard())
 
     elif data == "st:reload_packs":
         load_packs_from_sheets()
@@ -1805,6 +1805,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
