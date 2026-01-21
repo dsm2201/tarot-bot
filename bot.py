@@ -873,19 +873,23 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Админ‑меню:",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
-        
+
     elif data == "st:reload_packs":
-        print("🎉 КНОПКА РАБОТАЕТ!")  # для лога
-        
-        load_packs_from_sheets()
-        count = len(PACKS_DATA)
-        
-        # 🔥 ЭТОТО ЗАМЕНИТЬ НА:
-        await query.answer(
-            f"✅ Загружено {count}!", 
-            show_alert=True  # всплывашка!
-        )
+        await query.answer("🎉 КНОПКА ЖИВА!", show_alert=True)
         return
+
+      #elif data == "st:reload_packs":
+      #   print("🎉 КНОПКА РАБОТАЕТ!")  # для лога
+      #   
+      #  load_packs_from_sheets()
+      #  count = len(PACKS_DATA)
+      #  
+      #  # 🔥 ЭТОТО ЗАМЕНИТЬ НА:
+      #  await query.answer(
+      #      f"✅ Загружено {count}!", 
+      #      show_alert=True  # всплывашка!
+      #  )
+      #  return
 
     elif data == "packs_menu":
         # подменю с раскладами (генерируем из PACKS_DATA)
@@ -1832,6 +1836,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
