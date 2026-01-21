@@ -30,12 +30,16 @@ from gspread.auth import service_account_from_dict
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
 
-# Админы бота
-ADMIN_IDS = {457388809, 8089136347}
+# ===== Render Environment ===== Админы
+ADMIN_IDS = {
+    int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",")
+    if id.strip()
+}
 
-# Канал
-CHANNEL_USERNAME = "@tatiataro"
-CHANNEL_LINK = "https://t.me/tatiataro"
+#Канал
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
+CHANNEL_LINK = os.getenv("CHANNEL_LINK")
+
 
 # Локальные файлы, которые ещё используем
 LAST_REPORT_FILE = "last_report_ts.txt"
@@ -425,7 +429,7 @@ def build_main_keyboard(user_data: dict) -> InlineKeyboardMarkup:
     dice_left = get_dice_left(user_data)
 
     meta_text = f"🃏 Метафорическая карта ({meta_left})"
-    dice_text = f"🎲 Кубик выбора ({dice_left})"
+    dice_text = f"🎲 Помощь кубика ({dice_left})"
 
     keyboard = [
         [InlineKeyboardButton("📢 Перейти в канал", url=CHANNEL_LINK)],
@@ -512,7 +516,7 @@ async def send_random_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await chat.send_photo(
                 photo=f,
-                caption="🎲 Кубик выбор",
+                caption="🎲 Ответ кубика:",
             )
         except TimedOut:
             await chat.send_message(
@@ -628,19 +632,38 @@ async def test_day_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Готово (если в логах нет ошибок).")
 
 async def reload_packs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Перезагружаем расклады из Google Sheets (только для админа)."""
+    """Расклады: команда + кнопка (st:reload_packs)"""
     user = update.effective_user
+    query = update.callback_query
+    
     if user.id not in ADMIN_IDS:
-        await update.message.reply_text("Эта команда только для администратора.")
+        if query:
+            await query.answer("❌ Только админ!", show_alert=True)
+        else:
+            await update.message.reply_text("❌ Только админ!")
         return
     
-    await update.message.reply_text("⏳ Перезагружаю расклады из Google Sheets...")
-    load_packs_from_sheets()
-    
-    if PACKS_DATA:
-        await update.message.reply_text(f"✅ Загружено {len(PACKS_DATA)} раскладов!")
+    # "⏳ Загрузка..." 
+    if query:
+        await query.answer("🔄 Обновляю...")
+        await query.edit_message_text("⏳ Перезагружаю...")
     else:
-        await update.message.reply_text("⚠️ Расклады не загружены. Проверь лист 'packs'.")
+        await update.message.reply_text("⏳ Перезагружаю...")
+    
+    # Загрузка
+    load_packs_from_sheets()
+    count = len(PACKS_DATA)
+    
+    # Результат
+    if count > 0:
+        result = f"✅ Загружено **{count}** раскладов!"
+    else:
+        result = "⚠️ Расклады не загружены. Проверь лист 'packs'."
+    
+    if query:
+        await query.edit_message_text(result, parse_mode=ParseMode.MARKDOWN_V2)
+    else:
+        await update.message.reply_text(result)
 
 def update_nurture_subscribed_after():
     """Проставляем subscribed_after в nurture по актуальному статусу подписки из users."""
@@ -1126,7 +1149,6 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("📊 Сегодня: по карте", callback_data="st:today:cards")],
             [InlineKeyboardButton("📅 Вчера: все карты", callback_data="st:yesterday:all")],
             [InlineKeyboardButton("📈 7 дней: все карты", callback_data="st:7days:all")],
-            [InlineKeyboardButton("📆 Всё время: все карты", callback_data="st:alltime:all")],
             [InlineKeyboardButton("📬 Воронка: 7 дней", callback_data="st:nurture:7days")],
             [InlineKeyboardButton("🧭 Действия: сегодня", callback_data="st:actions:today")],
             [InlineKeyboardButton("🧭 Действия: вчера", callback_data="st:actions:yesterday")],
@@ -1802,6 +1824,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
