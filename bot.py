@@ -875,8 +875,18 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "st:reload_packs":
-        await query.answer("🎉 КНОПКА ЖИВА!", show_alert=True)
+        print("🎉 КНОПКА РАБОТАЕТ!")
+        await query.answer("🔄 Загружаю...", show_alert=False)  # убрать loading
+        
+        load_packs_from_sheets()
+        count = len(PACKS_DATA)
+        
+        await query.answer(  # ← ОДИН answer!
+            f"✅ Загружено **{count}** раскладов!", 
+            show_alert=True   # ← ВСПЛЫВКА 3 сек!
+        )
         return
+
 
       #elif data == "st:reload_packs":
       #   print("🎉 КНОПКА РАБОТАЕТ!")  # для лога
@@ -1836,6 +1846,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
