@@ -80,7 +80,6 @@ def get_admin_keyboard():
         [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
         [InlineKeyboardButton("👥 Список пользователей →", callback_data="st:users_menu")],
         [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
-        [InlineKeyboardButton("⬅️ Главное меню", callback_data="mainmenu")],
     ])
 
 
@@ -1805,6 +1804,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
