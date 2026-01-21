@@ -875,15 +875,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "st:reload_packs":
-        load_packs_from_sheets()  # ← работает!
+        load_packs_from_sheets()
         count = len(PACKS_DATA)
-        
-        # 🔥 ТОЛЬКО ЭТО!
-        await query.message.reply_text(  # ← СООБЩЕНИЕ в чат!
-            f"✅ Загружено **{count}** раскладов!", 
-            parse_mode=ParseMode.MARKDOWN_V2
-        )
+        await query.message.reply_text(f"✅ Загружено {count} раскладов!")
         return
+
 
 
 
@@ -1846,6 +1842,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
