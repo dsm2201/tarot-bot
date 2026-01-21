@@ -873,11 +873,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Админ‑меню:",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
-
-    elif data == "st:menu":
-        # меню админки с кнопкой "Обновить расклады"
-        keyboard = [...]
-        await query.message.reply_text(..., reply_markup=InlineKeyboardMarkup(keyboard))
+        
+    elif data == "reload_packs":  # ← для твоей кнопки!
+        load_packs_from_sheets()
+        count = len(PACKS_DATA)
+        await query.answer(f"✅ **{count}**!", show_alert=True)
+        return
 
     elif data == "packs_menu":
         # подменю с раскладами (генерируем из PACKS_DATA)
@@ -1825,6 +1826,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
