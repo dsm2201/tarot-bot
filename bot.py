@@ -72,6 +72,17 @@ GS_CARD_OF_DAY_WS = None
 GS_PACKS_WS = None
 PACKS_DATA = {}  # словарь: {code: {title, emoji, description, filename}}
 
+def get_admin_keyboard():
+    """ЕДИНАЯ клавиатура админки"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
+        [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
+        [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
+        [InlineKeyboardButton("👥 Список пользователей →", callback_data="st:users_menu")],
+        [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
+        [InlineKeyboardButton("⬅️ Главное меню", callback_data="mainmenu")],
+    ])
+
 
 def init_gs_client():
     global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS, GS_CARD_OF_DAY_WS, GS_PACKS_WS
@@ -856,47 +867,19 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
 
-    elif data == "st:menu":
-        if user_id not in ADMIN_IDS:
-            await query.answer("Эта функция только для администратора.", show_alert=True)
-            return
-        
-        keyboard = [
-            [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
-            [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
-            [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
-            [InlineKeyboardButton("👥 Список пользователей →", callback_data="st:users_menu")],
-            [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
-        ]
-        
-        await query.message.reply_text(
-            "Админ‑меню:",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
+        elif data == "st:menu":
+            if user_id not in ADMIN_IDS:
+                await query.answer("❌ Только админ!", show_alert=True)
+                return
+            await query.message.reply_text("⚙️ Админ-панель:",
+        reply_markup=get_admin_keyboard())
 
     elif data == "st:reload_packs":
         load_packs_from_sheets()
         count = len(PACKS_DATA)
         await query.message.reply_text(f"✅ Загружено {count} раскладов!")
         return
-
-
-
-
-
-      #elif data == "st:reload_packs":
-      #   print("🎉 КНОПКА РАБОТАЕТ!")  # для лога
-      #   
-      #  load_packs_from_sheets()
-      #  count = len(PACKS_DATA)
-      #  
-      #  # 🔥 ЭТОТО ЗАМЕНИТЬ НА:
-      #  await query.answer(
-      #      f"✅ Загружено {count}!", 
-      #      show_alert=True  # всплывашка!
-      #  )
-      #  return
-
+        
     elif data == "packs_menu":
         # подменю с раскладами (генерируем из PACKS_DATA)
         packs_keyboard = [
@@ -1078,33 +1061,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== админ‑меню и статистика =====
 
-
 async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user.id not in ADMIN_IDS:
-        await update.message.reply_text("Эта команда только для администратора.")
+        await update.message.reply_text("❌ Только админ!")
         return
     
-    # Статус карты дня
-    cod_status = "🤖 Авто" if CARD_OF_DAY_STATUS.get("enabled", True) else "👋 Ручная"
-    
-    keyboard = [
-        [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
-        [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
-        [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
-        [InlineKeyboardButton("👥 Список пользователей →", callback_data="st:users_menu")],
-        [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
-    ]
-    await update.message.reply_text(
-        "Админ‑меню:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
-    entry_keyboard = [[InlineKeyboardButton("⚙ Открыть админ‑панель", callback_data="st:menu")]]
-    await update.message.reply_text(
-        "Кнопка для быстрого входа в админ‑панель:",
-        reply_markup=InlineKeyboardMarkup(entry_keyboard),
-    )
-
+    await update.message.reply_text("⚙️ Админ-панель:", reply_markup=get_admin_keyboard())
 
 async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
     query = update.callback_query
@@ -1842,6 +1805,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
