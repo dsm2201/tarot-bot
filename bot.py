@@ -811,7 +811,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user = query.from_user
     user_id = user.id
-
+    print(f"🔥 CLICK data='{data}'")  # ← ОБЯЗАТЕЛЬНО!
     print(">>> button handler called, data:", data, "user_id:", user_id)
 
     await query.answer()
@@ -874,11 +874,18 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
         
-    elif data == "reload_packs":  # ← для твоей кнопки!
+    elif data == "st:reload_packs":
+        print("🎉 КНОПКА РАБОТАЕТ!")  # для лога
+        
         load_packs_from_sheets()
         count = len(PACKS_DATA)
-        await query.answer(f"✅ **{count}**!", show_alert=True)
-        return
+        
+        # 🔥 ЭТОТО ЗАМЕНИТЬ НА:
+        await query.answer(
+            f"✅ Загружено {count}!", 
+            show_alert=True  # всплывашка!
+        )
+    return
 
     elif data == "packs_menu":
         # подменю с раскладами (генерируем из PACKS_DATA)
@@ -899,7 +906,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Выбери расклад, который откликается или нажми «Свой вопрос»:",
             reply_markup=InlineKeyboardMarkup(packs_keyboard),
     )
-
         
     elif data == "pack:other":
         # Свой запрос — ЭТОТ БЛОК ДОЛЖЕН БЫТЬ ЗДЕСЬ, ДО startswith!
@@ -1826,6 +1832,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
