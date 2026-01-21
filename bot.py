@@ -632,6 +632,9 @@ async def test_day_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Готово (если в логах нет ошибок).")
 
 async def reload_packs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("🚀 reload_packs НАЧАЛАСЬ!")
+    print(f"🔍 query={update.callback_query is not None}")
+    print(f"🔍 ADMIN_IDS={ADMIN_IDS}")
     user = update.effective_user
     query = update.callback_query
     
@@ -1817,6 +1820,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
