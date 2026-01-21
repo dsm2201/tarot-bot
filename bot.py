@@ -875,17 +875,24 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "st:reload_packs":
-        print("🎉 КНОПКА РАБОТАЕТ!")
-        await query.answer("🔄 Загружаю...", show_alert=False)  # убрать loading
+        print("🔥 ШАГ 1: query.answer тест...")
+        try:
+            await query.answer("🎉 TEST ЖИВО!", show_alert=True)
+            print("✅ query.answer УСПЕШЕН!")
+        except Exception as e:
+            print(f"❌ query.answer ОШИБКА: {e}")
         
         load_packs_from_sheets()
         count = len(PACKS_DATA)
+        print(f"🔥 ШАГ 2: count={count}")
         
-        await query.answer(  # ← ОДИН answer!
-            f"✅ Загружено **{count}** раскладов!", 
-            show_alert=True   # ← ВСПЛЫВКА 3 сек!
-        )
+        try:
+            await query.answer(f"✅ {count}!", show_alert=True)
+            print("✅ ВТОРОЙ answer УСПЕШЕН!")
+        except Exception as e:
+            print(f"❌ ВТОРОЙ answer ОШИБКА: {e}")
         return
+
 
 
       #elif data == "st:reload_packs":
@@ -1846,6 +1853,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
