@@ -855,10 +855,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
 
     elif data == "dice_today":
-        normalizedailycounters(user_data)  # ← КЛЮЧЕВОЙ ФИКС!
+        _normalize_daily_counters(user_data)  # ← КЛЮЧЕВОЙ ФИКС!
         dice_used = user_data.get('dice_used', 0)
         if dice_used >= 1:
-            await query.answer("❌ 1 кубик в день!", show_alert=True)
+            await query.message.reply_text(
+            "❌ Только 1 кубик в день!\n\n"
+            "Приходите за кубиком завтра 🎲",
+            reply_markup=build_main_keyboard(user_data)
+            )
         else:
             instr_text = """
     🎲 ПОМОЩЬ КУБИКА
@@ -873,7 +877,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(instr_text, reply_markup=InlineKeyboardMarkup(keyboard))
     
     elif data == "dice_today_confirm":
-        normalizedailycounters(user_data)  # ← ЕЩЁ РАЗ для точности
+        _normalize_daily_counters(user_data)  # ← ЕЩЁ РАЗ для точности
         dice_used = user_data.get('dice_used', 0)
         if dice_used >= 1:
             await query.message.reply_text(
@@ -1833,6 +1837,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
