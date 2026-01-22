@@ -854,9 +854,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
 
-    elif data == "dicetoday":
-        diceused = userdata.get('diceused', 0)
-        if diceused >= 1:
+    elif data == "dice_today":
+        dice_used = user_data.get('dice_used', 0)
+        if dice_used >= 1:
             await query.answer("❌ 1 кубик в день!", show_alert=True)
         else:
             instr_text = """
@@ -868,15 +868,15 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     2. Нажмите кнопку для ответа!
             """
-            keyboard = [[InlineKeyboardButton("🎲 Получить ответ", callback_data="dicetoday_confirm")]]
+            keyboard = [[InlineKeyboardButton("🎲 Получить ответ", callback_data="dice_today_confirm")]]
             await query.edit_message_text(instr_text, reply_markup=InlineKeyboardMarkup(keyboard))
     
-    elif data == "dicetoday_confirm":
-        userdata['diceused'] = 1
+    elif data == "dice_today_confirm":
+        user_data['dice_used'] = 1
         today = datetime.now(UTC).date()
-        userdata['last_dicedate'] = today
+        user_data['last_dice_date'] = today
         
-        await sendrandomdice(update, context)
+        await send_random_dice(update, context)
         log_action_to_sheet(user, "dice", "bot")
         
         await query.edit_message_text(
@@ -1824,6 +1824,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
