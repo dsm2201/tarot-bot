@@ -855,6 +855,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
 
     elif data == "dice_today":
+        normalizedailycounters(user_data)  # ← КЛЮЧЕВОЙ ФИКС!
         dice_used = user_data.get('dice_used', 0)
         if dice_used >= 1:
             await query.answer("❌ 1 кубик в день!", show_alert=True)
@@ -872,20 +873,28 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(instr_text, reply_markup=InlineKeyboardMarkup(keyboard))
     
     elif data == "dice_today_confirm":
-        user_data['dice_used'] = 1
-        today = datetime.now(UTC).date()
-        user_data['last_dice_date'] = today
+        normalizedailycounters(user_data)  # ← ЕЩЁ РАЗ для точности
+        dice_used = user_data.get('dice_used', 0)
+        if dice_used >= 1:
+            await query.message.reply_text(
+                "❌ Только 1 кубик в день!\n\nПриходите завтра 🎲",
+                reply_markup=build_main_keyboard(user_data)
+            )
+            await query.answer()
+        else:
+            user_data['dice_used'] = 1
+            today = datetime.now(UTC).date()
+            user_data['last_dice_date'] = today
+            
+            await send_random_dice(update, context)
+            log_action_to_sheet(user, "dice", "bot")
+            
+            await query.edit_message_text(
+                "🎲 *Ответ получен!*\\n\\n(Смотрите на кубик!)",
+                reply_markup=build_main_keyboard(user_data),
+                parse_mode=ParseMode.MARKDOWN
+            )
         
-        await send_random_dice(update, context)
-        log_action_to_sheet(user, "dice", "bot")
-        
-        await query.edit_message_text(
-            "🎲 *Ответ получен!*\n\n(Думайте о вопросе при броске кубика)",
-            reply_markup=build_main_keyboard(user_data),
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-
     elif data == "st:menu":
         if user_id not in ADMIN_IDS:
             await query.answer("❌ Только админ!", show_alert=True)
@@ -1824,6 +1833,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
