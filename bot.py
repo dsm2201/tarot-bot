@@ -894,7 +894,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             log_action_to_sheet(user, "dice", "bot")
             
             await query.edit_message_text(
-                "🎲 *Ответ получен!*\\n\\n(Смотрите на кубик!)",
+                "🎲 *Ответ получен!*\n\n"
+                "(Смотрите на кубик!)",
                 reply_markup=build_main_keyboard(user_data),
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -1837,6 +1838,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
