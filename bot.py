@@ -845,7 +845,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "meta_card_today":
         meta_used = user_data.get("meta_used", 0)
         if meta_used >= 1:
-            await query.answer("Сегодня попытки метафорических карт закончились.", show_alert=True)
+            await query.message.reply_text(
+            "❌ Только 1 карта в день!\n\n"
+            "Приходите за картой завтра",
+            reply_markup=build_main_keyboard(user_data)
+            )
         else:
             user_data["meta_used"] = meta_used + 1
             await send_random_meta_card(update, context)
@@ -881,7 +885,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dice_used = user_data.get('dice_used', 0)
         if dice_used >= 1:
             await query.message.reply_text(
-                "❌ Только 1 кубик в день!\n\nПриходите завтра 🎲",
+                "❌ Только 1 кубик в день!\n\n"
+                "Приходите завтра 🎲",
                 reply_markup=build_main_keyboard(user_data)
             )
             await query.answer()
@@ -1838,6 +1843,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
