@@ -881,7 +881,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.edit_message_text(
             "🎲 *Ответ получен!*\n\n(Думайте о вопросе при броске кубика)",
-            reply_markup=build_main_keyboard(userdata),
+            reply_markup=build_main_keyboard(user_data),
             parse_mode=ParseMode.MARKDOWN
         )
         
@@ -1824,6 +1824,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
