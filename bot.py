@@ -853,18 +853,38 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             log_action_to_sheet(user, "meta_card", "bot")
 
         await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
-    
-    elif data == "dice_today":
-        dice_used = user_data.get("dice_used", 0)
-        if dice_used >= 1:
-            await query.answer("Сегодня попытки кубика выбора закончились.", show_alert=True)
-        else:
-            user_data["dice_used"] = dice_used + 1
-            await send_random_dice(update, context)
-            # лог действия
-            log_action_to_sheet(user, "dice", "bot")
 
-        await query.edit_message_reply_markup(reply_markup=build_main_keyboard(user_data))
+elif data == "dicetoday":
+    diceused = userdata.get('diceused', 0)
+    if diceused >= 1:
+        await query.answer("❌ 1 кубик в день!", show_alert=True)
+    else:
+        instr_text = """
+🎲 ПОМОЩЬ КУБИКА
+
+1. Сформулируйте вопрос ДА/НЕТ в голове:
+• Получу ли я повышение?
+• Стоит ли сегодня ехать?
+
+2. Нажмите кнопку для ответа!
+        """
+        keyboard = [[InlineKeyboardButton("🎲 Получить ответ", callback_data="dicetoday_confirm")]]
+        await query.edit_message_text(instr_text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+elif data == "dicetoday_confirm":
+    userdata['diceused'] = 1
+    today = datetime.now(UTC).date()
+    userdata['last_dicedate'] = today
+    
+    await sendrandomdice(update, context)
+    log_action_to_sheet(user, "dice", "bot")
+    
+    await query.edit_message_text(
+        "🎲 *Ответ получен!*\n\n(Думайте о вопросе при броске кубика)",
+        reply_markup=build_main_keyboard(userdata),
+        parse_mode=ParseMode.MARKDOWN
+    )
+    
 
     elif data == "st:menu":
         if user_id not in ADMIN_IDS:
@@ -1804,6 +1824,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
