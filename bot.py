@@ -1847,12 +1847,12 @@ def main():
     )
     job_queue.run_daily(
     send_card_of_the_day_to_channel,
-    time=time(4, 5),  # В Москве на 3 часа больше
+        time=dt_time(4, 5),  # В Москве на 3 часа больше
     name="card_of_day",
     )
     job_queue.run_daily(
         daily_reminder_job,
-        time=dt_time(5, 0),   # 05:00 UTC ≈ 08:00 по Москве
+        time=dt_time(4, 5),  # В Москве на 3 часа больше
         name="daily_reminder",
     )
 
@@ -1869,6 +1869,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
