@@ -2,7 +2,7 @@ import os
 import random
 import csv
 import json
-from datetime import datetime, UTC, timedelta, time
+from datetime import datetime, UTC, timedelta, time as dt_time import time as time_module
 from collections import defaultdict
 from telegram.error import TimedOut
 
@@ -1851,7 +1851,7 @@ def main():
     )
     job_queue.run_daily(
         daily_reminder_job,
-        time=time(5, 0),   # 05:00 UTC ≈ 08:00 по Москве
+        time=dt_time(5, 0),   # 05:00 UTC ≈ 08:00 по Москве
         name="daily_reminder",
     )
 
@@ -1868,6 +1868,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
