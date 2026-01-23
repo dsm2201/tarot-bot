@@ -30,6 +30,12 @@ from gspread.auth import service_account_from_dict
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
 
+import time
+
+USERS_CACHE = {'data': None, 'timestamp': 0}
+ACTIONS_CACHE = {'data': None, 'timestamp': 0}
+CACHE_TTL = 300  # 5 минут
+
 # ===== Render Environment ===== Админы
 ADMIN_IDS = {
     int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",")
@@ -402,8 +408,25 @@ def update_subscribed_flag(user_id: int, is_sub: bool):
     except Exception as e:
         print(f">>> update_subscribed_flag (Sheets) error: {e}")
 
-# ===== лимиты попыток на день =====
+# ===== КЭШ RAM =====
 
+def get_cached_users():
+    now = time.time()
+    if now - USERS_CACHE['timestamp'] > CACHE_TTL:
+        print("🔄 Кэш users обновлён")
+        USERS_CACHE['data'] = load_users()
+        USERS_CACHE['timestamp'] = now
+    return USERS_CACHE['data']
+
+def get_cached_actions():
+    now = time.time()
+    if now - ACTIONS_CACHE['timestamp'] > CACHE_TTL:
+        print("🔄 Кэш actions обновлён")
+        ACTIONS_CACHE['data'] = load_actions()
+        ACTIONS_CACHE['timestamp'] = now
+    return ACTIONS_CACHE['data']
+
+# ===== лимиты попыток на день =====
 
 def _normalize_daily_counters(user_data: dict):
     today = datetime.now(UTC).date()
@@ -1291,7 +1314,7 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 def build_actions_stats(period: str) -> str:
-    rows = load_actions()
+    rows = get_cached_actions()  # ← БЫЛО: load_actions()
     if not rows:
         return esc_md2("Лог действий пока пуст.")
 
@@ -1519,7 +1542,7 @@ def build_nurture_stats(days: int = 7) -> str:
 
 def build_users_list(sort_by="last") -> str:
     """Список пользователей с первым и последним входом."""
-    users = load_users()
+    users = get_cached_users()  # ← БЫЛО: load_users()
     if not users:
         return esc_md2("Пока нет пользователей в боте.")
     
@@ -1843,6 +1866,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
