@@ -34,7 +34,7 @@ import time
 
 USERS_CACHE = {'data': None, 'timestamp': 0}
 ACTIONS_CACHE = {'data': None, 'timestamp': 0}
-CACHE_TTL = 300  # 5 минут
+CACHE_TTL = 300
 
 # ===== Render Environment ===== Админы
 ADMIN_IDS = {
@@ -411,7 +411,8 @@ def update_subscribed_flag(user_id: int, is_sub: bool):
 # ===== КЭШ RAM =====
 
 def get_cached_users():
-    now = time.time()
+    import time as t  # ФИКС конфликта!
+    now = t.time()
     if now - USERS_CACHE['timestamp'] > CACHE_TTL:
         print("🔄 Кэш users обновлён")
         USERS_CACHE['data'] = load_users()
@@ -419,7 +420,8 @@ def get_cached_users():
     return USERS_CACHE['data']
 
 def get_cached_actions():
-    now = time.time()
+    import time as t  # ФИКС конфликта!
+    now = t.time()
     if now - ACTIONS_CACHE['timestamp'] > CACHE_TTL:
         print("🔄 Кэш actions обновлён")
         ACTIONS_CACHE['data'] = load_actions()
@@ -1866,6 +1868,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
