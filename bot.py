@@ -1463,7 +1463,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- ОБНОВЛЁННЫЙ ОБРАБОТЧИК handle_text ---
 # Теперь он должен учитывать временный ввод текста для рассылки админом.
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global GS_AUTO_NURTURE_WS # <-- Добавьте GS_AUTO_NURTURE_WS, если используете её внутри
+    # --- ОБЯЗАТЕЛЬНО В НАЧАЛЕ ФУНКЦИИ ---
+    global GS_SHEET, GS_AUTO_NURTURE_WS
+    # ------------------------------------
+
     if not update.message:
         return
 
@@ -1479,7 +1482,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             input_as_int = int(text_input)
             if input_as_int > 0:
                 # Это период
-                global GS_SHEET # Используем глобальную переменную
+                # global GS_SHEET # <-- УДАЛЕНО: уже объявлено в начале функции
                 if GS_SHEET is None:
                     print(f"❌ Ошибка: GS_SHEET не инициализирована для обновления периода.")
                     await update.message.reply_text(f"❌ Ошибка обновления периода: подключение к таблице не готово.")
@@ -1505,7 +1508,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Если не число, значит, это текст
         # (проверка числа выше, если прошла успешно, функция завершится return)
         # Поэтому если мы здесь, text_input - это текст
-        global GS_SHEET # Используем глобальную переменную
+        # global GS_SHEET # <-- УДАЛЕНО: уже объявлено в начале функции
         if GS_SHEET is None:
             print(f"❌ Ошибка: GS_SHEET не инициализирована для обновления текста.")
             await update.message.reply_text(f"❌ Ошибка обновления текста: подключение к таблице не готово.")
@@ -2410,6 +2413,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
