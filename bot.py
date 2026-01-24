@@ -83,11 +83,12 @@ def get_admin_keyboard():
     """ЕДИНАЯ клавиатура админки"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
-        [InlineKeyboardButton("📢 Рассылка пользователям", callback_data="st:broadcast_menu")], # <-- НОВАЯ КНОПКА
+        [InlineKeyboardButton("📢 Рассылка пользователям", callback_data="st:broadcast_menu")],
         [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
         [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
         [InlineKeyboardButton("👥 Список пользователей →", callback_data="st:users_menu")],
         [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
+        [InlineKeyboardButton("📤 Авторассылка →", callback_data="st:auto_nurture_menu")], # <-- НОВАЯ КНОПКА
     ])
 
 def init_gs_client():
@@ -764,6 +765,173 @@ async def broadcast_message_to_users_html(bot, user_list, message_text):
 
     return "\n".join(report_parts)
 
+# --- ОБНОВЛЁННАЯ ФУНКЦИЯ ДЛЯ АВТОМАТИЧЕСКОЙ РАССЫЛКИ С ИСПОЛЬЗОВАНИЕМ ОТДЕЛЬНОЙ ВКЛАДКИ ---
+import asyncio
+from datetime import datetime, timedelta, date
+from pytz import UTC
+import gspread # Убедитесь, что gspread установлен
+
+async def auto_nurture_broadcast(context: ContextTypes.DEFAULT_TYPE):
+    """
+    Функция автоматической рассылки по воронке.
+    Вызывается JobQueue по расписанию.
+    Читает настройки из вкладки 'auto_nurture', строка 1.
+    Проверяет историю отправок в той же вкладке.
+    """
+    print("🔄 Запуск автоматической воронки из вкладки 'auto_nurture'...")
+    bot = context.bot
+
+    try:
+        gc = gspread.service_account(filename=GSPREAD_JSON_PATH)
+        sh = gc.open_by_key(GSHEET_KEY)
+        worksheet = sh.worksheet("auto_nurture") # Открываем нужную вкладку
+    except gspread.exceptions.WorksheetNotFound:
+        print("❌ Вкладка 'auto_nurture' не найдена в таблице.")
+        return
+    except Exception as e:
+        print(f"❌ Ошибка доступа к Google Sheets: {e}")
+        return
+
+    # 1. Чтение настроек из строки 1
+    try:
+        settings_row = worksheet.row_values(1) # Получаем первую строку
+        if len(settings_row) < 8: # Проверяем, достаточно ли колонок (user_id, username, first_name, action, sent_date, status, error_msg, text, period)
+            print("❌ Недостаточно данных в строке 1 вкладки 'auto_nurture'. Ожидаемые колонки: user_id, username, first_name, action, sent_date, status, error_msg, text, period")
+            return
+
+        # Сопоставляем значения с колонками
+        # Предполагаем порядок: A, B, C, D, E, F, G, H, I
+        #                       user_id, username, first_name, action, sent_date, status, error_msg, text, period
+        # Индексация в Python с 0: 0      1         2            3       4          5       6          7     8
+        stored_text = settings_row[7].strip() if len(settings_row) > 7 else "" # Колонка H (индекс 7)
+        stored_period_str = settings_row[8].strip() if len(settings_row) > 8 else "" # Колонка I (индекс 8)
+
+        if not stored_text:
+            print("❌ Текст для рассылки не задан (колонка 'text' в строке 1 пуста).")
+            return
+        try:
+            stored_period_days = int(stored_period_str)
+            if stored_period_days <= 0:
+                print("❌ Период рассылки должен быть положительным числом.")
+                return
+        except ValueError:
+            print(f"❌ Неверный формат периода: '{stored_period_str}'. Должно быть целое число дней.")
+            return
+
+    except Exception as e:
+        print(f"❌ Ошибка чтения настроек из строки 1: {e}")
+        return
+
+    print(f"📋 Найдены настройки: период = {stored_period_days} дней, текст = '{stored_text[:30]}...'")
+
+    # 2. Загрузка истории отправок (все строки, кроме первой)
+    try:
+        all_rows = worksheet.get_all_values()
+        if len(all_rows) <= 1:
+            history_rows = [] # Нет истории, только настройки
+        else:
+            history_rows = all_rows[1:] # Берём все строки, кроме первой (настройки)
+    except Exception as e:
+        print(f"❌ Ошибка загрузки истории из вкладки 'auto_nurture': {e}")
+        return
+
+    # 3. Формирование словаря last_sent_date_per_user_id
+    last_sent_date_per_user_id = {}
+    for row in history_rows:
+        if len(row) > 4: # Проверяем, что есть user_id и sent_date
+            user_id_str = row[0].strip() # Колонка A
+            sent_date_str = row[4].strip() # Колонка E (sent_date)
+            if user_id_str and sent_date_str:
+                try:
+                    # Предполагаем формат YYYY-MM-DD
+                    sent_date_obj = datetime.strptime(sent_date_str, "%Y-%m-%d").date()
+                    # Если для одного user_id есть несколько записей, берём самую последнюю
+                    existing_date = last_sent_date_per_user_id.get(user_id_str)
+                    if existing_date is None or sent_date_obj > existing_date:
+                        last_sent_date_per_user_id[user_id_str] = sent_date_obj
+                except ValueError:
+                    print(f"⚠️ Неверный формат даты в истории для user_id {user_id_str}: '{sent_date_str}'")
+
+    # 4. Загрузка *всех* пользователей из основной вкладки (предположим, это sheet1)
+    # Используем вашу существующую функцию для получения пользователей
+    users = get_cached_users() # или load_users(), если у вас нет кэша
+
+    if not users:
+        print("❌ Не удалось получить список пользователей для автоматической воронки из основной вкладки.")
+        return
+
+    # 5. Определение даты "N дней назад"
+    cutoff_date = (datetime.now(UTC).date()) - timedelta(days=stored_period_days)
+    print(f"📅 Пороговая дата (до которой НЕ отправляем): {cutoff_date}")
+
+    # 6. Фильтрация и отправка
+    users_to_notify = []
+    for user_data in users:
+        user_id_str = user_data.get("user_id", "").strip()
+        if not user_id_str:
+            continue
+
+        last_sent_date = last_sent_date_per_user_id.get(user_id_str)
+        # Отправляем, если:
+        # a) Пользователь никогда не получал это сообщение (last_sent_date is None)
+        # b) Последнее получение было раньше cutoff_date (т.е. прошло >= stored_period_days дней)
+        if last_sent_date is None or last_sent_date <= cutoff_date:
+            users_to_notify.append(user_id_str)
+
+    total_to_notify = len(users_to_notify)
+    print(f"📢 Найдено {total_to_notify} пользователей для отправки.")
+
+    if total_to_notify == 0:
+        return
+
+    success_count = 0
+    failure_count = 0
+    successful_notifications = []
+
+    for user_id_str in users_to_notify:
+        try:
+            await bot.send_message(chat_id=int(user_id_str), text=stored_text)
+            success_count += 1
+            print(f"✅ Авто-воронка ({stored_period_days} дней) успешно отправлена пользователю {user_id_str}")
+            successful_notifications.append(user_id_str)
+        except Exception as e:
+            failure_count += 1
+            error_type = type(e).__name__
+            print(f"❌ Ошибка при отправке авто-воронки пользователю {user_id_str}: {error_type} - {e}")
+            # Здесь можно логировать ошибку в отдельную колонку, если нужно
+
+    # 7. Запись результатов в вкладку 'auto_nurture'
+    if successful_notifications:
+        try:
+            current_date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+            rows_to_append = []
+            for user_id_str in successful_notifications:
+                # Попробуем получить username и first_name из основного списка
+                user_info = next((u for u in users if u.get("user_id") == user_id_str), {})
+                username = user_info.get("username", "")
+                first_name = user_info.get("first_name", "")
+
+                new_row = [
+                    user_id_str,  # A - user_id
+                    username,     # B - username
+                    first_name,   # C - first_name
+                    "auto_nurture", # D - action (тип рассылки)
+                    current_date_str, # E - sent_date
+                    "sent",       # F - status
+                    "",           # G - error_msg (пусто при успехе)
+                    stored_text,  # H - text (для истории, можно сократить)
+                    str(stored_period_days) # I - period (для истории)
+                ]
+                rows_to_append.append(new_row)
+
+            if rows_to_append:
+                worksheet.append_rows(rows_to_append) # Добавляем строки в конец
+                print(f"✅ Записано {len(rows_to_append)} строк об отправке в вкладку 'auto_nurture'.")
+        except Exception as write_e:
+            print(f"❌ Ошибка записи результата в Google Sheets: {write_e}")
+
+    print(f"🏁 Автоматическая воронка завершена. Успешно: {success_count}, Ошибки: {failure_count}")
+
 async def send_card_of_the_day_to_channel(context: ContextTypes.DEFAULT_TYPE):
     """Отправляет карту дня в канал если карта дня включена."""
     # Проверяем статус
@@ -1262,21 +1430,42 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     admin_id = user.id
 
-    # --- НОВЫЙ БЛОК: Обработка ввода текста рассылки админом ---
-    # Проверяем, является ли пользователь админом и вводит ли он текст для рассылки
-    temp_key = f"temp_broadcast_text_{admin_id}"
+    # --- НОВЫЙ БЛОК: Обработка ввода текста/периода авторассылки админом ---
     if admin_id in ADMIN_IDS and update.message.text:
-        # Сохраняем текст как временный для этого админа
-        context.bot_data[temp_key] = update.message.text
-        # Отправляем подтверждение пользователю
-        await update.message.reply_text(
-            f"✅ Текст рассылки временно сохранен:\n`{esc_md2(update.message.text)}`\n\n"
-            f"Перейдите в админ-меню и нажмите '📢 Рассылка пользователям' -> '✅ Подтвердить рассылку', "
-            f"чтобы выполнить рассылку.",
-            parse_mode=ParseMode.MARKDOWN_V2
-        )
-        # Завершаем обработку для админа, чтобы не сработал код ниже (про "расклад")
-        return
+        text_input = update.message.text.strip()
+        try:
+            # Проверяем, является ли ввод числом (период)
+            input_as_int = int(text_input)
+            if input_as_int > 0:
+                # Это период
+                try:
+                    gc = gspread.service_account(filename=GSPREAD_JSON_PATH)
+                    sh = gc.open_by_key(GSHEET_KEY)
+                    worksheet = sh.worksheet("auto_nurture")
+                    # Обновляем только ячейку с периодом (I1)
+                    worksheet.update('I1', input_as_int)
+                    await update.message.reply_text(f"✅ Период авторассылки обновлён на: *{input_as_int}* дней.", parse_mode=ParseMode.MARKDOWN_V2)
+                    print(f"✅ Админ {admin_id} обновил период авторассылки до {input_as_int} дней.")
+                    return # Завершаем обработку для админа
+                except Exception as e:
+                    print(f"❌ Ошибка обновления периода: {e}")
+                    await update.message.reply_text(f"❌ Ошибка обновления периода: {e}")
+                    return
+        except ValueError:
+            # Не число, значит, это текст
+            try:
+                gc = gspread.service_account(filename=GSPREAD_JSON_PATH)
+                sh = gc.open_by_key(GSHEET_KEY)
+                worksheet = sh.worksheet("auto_nurture")
+                # Обновляем только ячейку с текстом (H1)
+                worksheet.update('H1', text_input)
+                await update.message.reply_text(f"✅ Текст авторассылки обновлён:\n`{esc_md2(text_input)}`", parse_mode=ParseMode.MARKDOWN_V2)
+                print(f"✅ Админ {admin_id} обновил текст авторассылки.")
+                return # Завершаем обработку для админа
+            except Exception as e:
+                print(f"❌ Ошибка обновления текста: {e}")
+                await update.message.reply_text(f"❌ Ошибка обновления текста: {e}")
+                return
     # --- КОНЕЦ НОВОГО БЛОКА ---
 
     # --- Оригинальная логика для обычных пользователей (и остальная для админов) ---
@@ -1332,6 +1521,45 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
     # ===== cod_status =====
         # --- НОВОЕ ДЕЙСТВИЕ ДЛЯ РАССЫЛКИ ---
 
+    # --- НОВОЕ ДЕЙСТВИЕ ДЛЯ АВТОРАССЫЛКИ ---
+    if action == "auto_nurture_menu":
+        # Открываем меню управления авторассылкой
+        try:
+            gc = gspread.service_account(filename=GSPREAD_JSON_PATH)
+            sh = gc.open_by_key(GSHEET_KEY)
+            worksheet = sh.worksheet("auto_nurture")
+            settings_row = worksheet.row_values(1)
+            current_text = settings_row[7] if len(settings_row) > 7 else ""
+            current_period = settings_row[8] if len(settings_row) > 8 else ""
+        except Exception as e:
+            print(f"❌ Ошибка чтения настроек авторассылки: {e}")
+            current_text = "Ошибка загрузки"
+            current_period = "Ошибка загрузки"
+
+        instruction_text = (
+            "📤 *МЕНЮ АВТОРАССЫЛКИ*\n\n"
+            "Здесь можно настроить автоматическую рассылку.\n\n"
+            f"*Текущий текст:* \n`{esc_md2(current_text)}`\n\n"
+            f"*Текущий период (дней):* `{esc_md2(str(current_period))}`\n\n"
+            "Для изменения:\n"
+            "1. Отправьте *новый текст* в этот чат.\n"
+            "2. Отправьте *новый период* (число дней) в этот чат.\n"
+            "3. Изменения сохранятся в таблицу.\n\n"
+            "Джоба проверяет каждые 24ч, пора ли отправлять."
+        )
+
+        keyboard = [
+            [InlineKeyboardButton("❌ Закрыть", callback_data="st:menu")], # Возврат в меню
+        ]
+        await query.edit_message_text(
+            instruction_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    # --- (остальные if/elif действия) ---
+    
     if action == "broadcast_menu":
         # Показываем меню для ввода сообщения рассылки
         # Так как бот не может просто так запросить ввод, мы дадим инструкции и кнопку подтверждения
@@ -2093,8 +2321,17 @@ def main():
         name="daily_reminder",
     )
 
+    # --- ПЛАНИРОВАНИЕ ДЖОБЫ ---
+    job_queue = app.job_queue
+    job_queue.run_daily(
+        callback=auto_nurture_broadcast, # Наша ОБНОВЛЁННАЯ функция
+        time=datetime.time(hour=10, tzinfo=UTC), # Время в UTC (например, 10:00 UTC). Выберите удобное.
+        name="auto_nurture_job" # Имя для идентификации
+    )
+    print("✅ Джоба 'auto_nurture_job' запланирована (ежедневно в 10:00 UTC). Читает настройки из вкладки 'auto_nurture'.")
+
+    # app.run_polling(...) или app.run_webhook(...)    
 # тут как раз запуск веб‑сервиса на Render
-    
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
@@ -2106,6 +2343,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
