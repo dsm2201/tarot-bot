@@ -1490,7 +1490,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     worksheet = GS_AUTO_NURTURE_WS # <-- ИСПОЛЬЗУЕМ ГЛОБАЛЬНУЮ ПЕРЕМЕННУЮ
                     # Обновляем только ячейку с периодом (I1) - строка 1, используя правильный формат
                     worksheet.update('I1', [[input_as_int]]) # <-- ИСПРАВЛЕНО: передаём как список списков
-                    await update.message.reply_text(f"✅ Период авторассылки обновлён на: *{input_as_int}* дней.", parse_mode=ParseMode.MARKDOWN_V2)
+                    await update.message.reply_text(f"✅ Период авторассылки обновлён на: {input_as_int} дней.", parse_mode=ParseMode.MARKDOWN_V2)
                     print(f"✅ Админ {admin_id} обновил период авторассылки до {input_as_int} дней.")
                     return # Завершаем обработку для админа
                 except gspread.exceptions.WorksheetNotFound:
@@ -2413,6 +2413,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
