@@ -69,6 +69,7 @@ USERS_SHEET_NAME = "users"
 ACTIONS_SHEET_NAME = "actions"
 NURTURE_SHEET_NAME = "nurture"
 CARD_OF_DAY_SHEET_NAME = "card_of_day"
+AUTO_NURTURE_SHEET_NAME = "auto_nurture" # <-- НОВАЯ СТРОКА
 
 GS_CLIENT = None
 GS_SHEET = None
@@ -77,6 +78,7 @@ GS_ACTIONS_WS = None
 GS_NURTURE_WS = None
 GS_CARD_OF_DAY_WS = None
 GS_PACKS_WS = None
+GS_AUTO_NURTURE_WS = None # <-- НОВАЯ СТРОКА
 PACKS_DATA = {}  # словарь: {code: {title, emoji, description, filename}}
 
 def get_admin_keyboard():
@@ -92,7 +94,7 @@ def get_admin_keyboard():
     ])
 
 def init_gs_client():
-    global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS, GS_CARD_OF_DAY_WS, GS_PACKS_WS
+    global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS, GS_CARD_OF_DAY_WS, GS_PACKS_WS, GS_AUTO_NURTURE_WS # <-- Добавлено GS_AUTO_NURTURE_WS
     if not GS_SERVICE_JSON or not GS_SHEET_ID:
         print(">>> Google Sheets: переменные GS_SERVICE_JSON / GS_SHEET_ID не заданы.")
         return
@@ -102,6 +104,8 @@ def init_gs_client():
         sheet = client.open_by_key(GS_SHEET_ID)
         users_ws = sheet.worksheet(USERS_SHEET_NAME)
         actions_ws = sheet.worksheet(ACTIONS_SHEET_NAME)
+
+        # Обработка вкладок, которые могут отсутствовать
         try:
             nurture_ws = sheet.worksheet(NURTURE_SHEET_NAME)
         except Exception:
@@ -111,19 +115,38 @@ def init_gs_client():
         except Exception:
             card_of_day_ws = None
         try:
-            packs_ws = sheet.worksheet("packs")  # <- ЭТОТ БЛОК
+            packs_ws = sheet.worksheet("packs")  # <- Старый код
         except Exception:
             packs_ws = None
-        
+
+        # --- НОВЫЙ КОД ДЛЯ auto_nurture ---
+        try:
+            auto_nurture_ws = sheet.worksheet(AUTO_NURTURE_SHEET_NAME) # <- Получаем объект вкладки auto_nurture
+            print(f">>> init_gs_client: вкладка '{AUTO_NURTURE_SHEET_NAME}' успешно подключена.")
+        except gspread.exceptions.WorksheetNotFound:
+            # Конкретно на случай, если вкладка не найдена
+            print(f">>> init_gs_client: вкладка '{AUTO_NURTURE_SHEET_NAME}' не найдена. Она будет создана при первой необходимости.")
+            auto_nurture_ws = None
+        except Exception as e: # Обрабатываем другие возможные ошибки (редко)
+            print(f">>> init_gs_client: ошибка при получении вкладки '{AUTO_NURTURE_SHEET_NAME}': {e}")
+            auto_nurture_ws = None
+        # --- КОНЕЦ НОВОГО КОДА ---
+
+        # --- ОСНОВНОЕ ПРИСВАИВАНИЕ ПЕРЕМЕННЫХ ---
+        # Эти строки выполняются ТОЛЬКО если основной try (до этого места) завершился успешно
         GS_CLIENT = client
         GS_SHEET = sheet
         GS_USERS_WS = users_ws
         GS_ACTIONS_WS = actions_ws
         GS_NURTURE_WS = nurture_ws
         GS_CARD_OF_DAY_WS = card_of_day_ws
-        GS_PACKS_WS = packs_ws  # <- И ПРИСВАИВАНИЕ
+        GS_PACKS_WS = packs_ws
+        GS_AUTO_NURTURE_WS = auto_nurture_ws # <-- Присваиваем, даже если None
         print(">>> Google Sheets: успешно подключено к tatiataro_log.")
+        # --- КОНЕЦ ПРИСВАИВАНИЯ ---
+
     except Exception as e:
+        # Этот except срабатывает, если произошла ошибка ДО присваивания переменных (например, ошибка открытия таблицы)
         print(f">>> Google Sheets init error: {e}")
         GS_CLIENT = None
         GS_SHEET = None
@@ -132,7 +155,8 @@ def init_gs_client():
         GS_NURTURE_WS = None
         GS_CARD_OF_DAY_WS = None
         GS_PACKS_WS = None
-
+        GS_AUTO_NURTURE_WS = None # <-- Важно: сбросить и новую переменную тоже
+    
 def load_json(name):
     path = os.path.join(TEXTS_DIR, name)
     with open(path, "r", encoding="utf-8") as f:
@@ -777,29 +801,31 @@ from datetime import datetime, timedelta, date, time # time уже импорт�
 from pytz import UTC
 import gspread # Убедитесь, что gspread установлен
 
+# --- ОБНОВЛЁННАЯ ФУНКЦИЯ ДЛЯ АВТОМАТИЧЕСКОЙ РАССЫЛКИ С ИСПОЛЬЗОВАНИЕМ ОТДЕЛЬНОЙ ВКЛАДКИ И ГЛОБАЛЬНОЙ ПЕРЕМЕННОЙ GS_AUTO_NURTURE_WS ---
+import asyncio
+from datetime import datetime, timedelta, date, time # time уже импортирован
+from pytz import UTC
+import gspread # Убедитесь, что gspread установлен
+
 async def auto_nurture_broadcast(context: ContextTypes.DEFAULT_TYPE):
     """
     Функция автоматической рассылки по воронке.
     Вызывается JobQueue по расписанию.
     Читает настройки из вкладки 'auto_nurture', строка 1.
     Проверяет историю отправок в той же вкладке.
-    Использует глобальную переменную GS_SHEET.
+    Использует глобальную переменную GS_AUTO_NURTURE_WS.
     """
     print("🔄 Запуск автоматической воронки из вкладки 'auto_nurture'...")
     bot = context.bot
 
-    # Проверяем, инициализирована ли глобальная переменная GS_SHEET
-    global GS_SHEET
-    if GS_SHEET is None:
-        print("❌ Ошибка: GS_SHEET не инициализирована. Убедитесь, что init_gs_client() была вызвана при запуске.")
+    # Проверяем, инициализирована ли глобальная переменная GS_AUTO_NURTURE_WS
+    global GS_AUTO_NURTURE_WS # Убедимся, что используем глобальную
+    if GS_AUTO_NURTURE_WS is None:
+        print("❌ Ошибка: GS_AUTO_NURTURE_WS не инициализирована или вкладка не найдена при старте.")
         return
 
     try:
-        # Открываем нужную вкладку через уже инициализированную таблицу
-        worksheet = GS_SHEET.worksheet("auto_nurture")
-    except gspread.exceptions.WorksheetNotFound:
-        print("❌ Вкладка 'auto_nurture' не найдена в таблице.")
-        return
+        worksheet = GS_AUTO_NURTURE_WS # <-- ИСПОЛЬЗУЕМ ГЛОБАЛЬНУЮ ПЕРЕМЕННУЮ
     except Exception as e:
         print(f"❌ Ошибка доступа к вкладке 'auto_nurture': {e}")
         return
@@ -943,6 +969,7 @@ async def auto_nurture_broadcast(context: ContextTypes.DEFAULT_TYPE):
             print(f"❌ Ошибка записи результата в Google Sheets: {write_e}")
 
     print(f"🏁 Автоматическая воронка завершена. Успешно: {success_count}, Ошибки: {failure_count}")
+
 
 async def send_card_of_the_day_to_channel(context: ContextTypes.DEFAULT_TYPE):
     """Отправляет карту дня в канал если карта дня включена."""
@@ -1436,6 +1463,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- ОБНОВЛЁННЫЙ ОБРАБОТЧИК handle_text ---
 # Теперь он должен учитывать временный ввод текста для рассылки админом.
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global GS_AUTO_NURTURE_WS # <-- Добавьте GS_AUTO_NURTURE_WS, если используете её внутри
     if not update.message:
         return
 
@@ -1457,7 +1485,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(f"❌ Ошибка обновления периода: подключение к таблице не готово.")
                     return
                 try:
-                    worksheet = GS_SHEET.worksheet("auto_nurture") # Открываем нужную вкладку
+                    worksheet = GS_AUTO_NURTURE_WS # <-- ИСПОЛЬЗУЕМ ГЛОБАЛЬНУЮ ПЕРЕМЕННУЮ
                     # Обновляем только ячейку с периодом (I1)
                     worksheet.update('I1', input_as_int)
                     await update.message.reply_text(f"✅ Период авторассылки обновлён на: *{input_as_int}* дней.", parse_mode=ParseMode.MARKDOWN_V2)
@@ -1483,7 +1511,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Ошибка обновления текста: подключение к таблице не готово.")
             return
         try:
-            worksheet = GS_SHEET.worksheet("auto_nurture") # Открываем нужную вкладку
+            worksheet = GS_AUTO_NURTURE_WS # <-- ИСПОЛЬЗУЕМ ГЛОБАЛЬНУЮ ПЕРЕМЕННУЮ
             # Обновляем только ячейку с текстом (H1)
             worksheet.update('H1', text_input)
             await update.message.reply_text(f"✅ Текст авторассылки обновлён:\n`{esc_md2(text_input)}`", parse_mode=ParseMode.MARKDOWN_V2)
@@ -1538,6 +1566,10 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚙️ Админ-панель:", reply_markup=get_admin_keyboard())
 
 async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+    # --- ОБЪЯВЛЯЕМ ВСЕ GLOBAL ПЕРЕМЕННЫЕ В НАЧАЛЕ ФУНКЦИИ ---
+    global GS_SHEET, GS_AUTO_NURTURE_WS
+    # ------------------------------
+
     query = update.callback_query
     user = query.from_user
     if user.id not in ADMIN_IDS:
@@ -1550,14 +1582,13 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
     # --- НОВОЕ ДЕЙСТВИЕ ДЛЯ АВТОРАССЫЛКИ ---
     if action == "auto_nurture_menu":
         # Открываем меню управления авторассылкой
-        global GS_SHEET # Используем глобальную переменную
-        if GS_SHEET is None:
+        if GS_AUTO_NURTURE_WS is None: # <-- ИСПРАВЛЕНО: проверяем GS_AUTO_NURTURE_WS, а не GS_SHEET
             print("❌ Ошибка: GS_SHEET не инициализирована для меню авторассылки.")
             current_text = "Ошибка подключения"
             current_period = "Ошибка подключения"
         else:
             try:
-                worksheet = GS_SHEET.worksheet("auto_nurture") # Открываем нужную вкладку
+                worksheet = GS_AUTO_NURTURE_WS # <-- ИСПОЛЬЗУЕМ ГЛОБАЛЬНУЮ ПЕРЕМЕННУЮ
                 settings_row = worksheet.row_values(1)
                 current_text = settings_row[7] if len(settings_row) > 7 else ""
                 current_period = settings_row[8] if len(settings_row) > 8 else ""
@@ -2379,6 +2410,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
