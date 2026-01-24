@@ -1265,6 +1265,7 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     # ===== cod_status =====
         # --- НОВОЕ ДЕЙСТВИЕ ДЛЯ РАССЫЛКИ ---
+
     if action == "broadcast_menu":
         # Показываем меню для ввода сообщения рассылки
         # Так как бот не может просто так запросить ввод, мы дадим инструкции и кнопку подтверждения
@@ -1282,16 +1283,16 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
             "2. После отправки текста нажмите кнопку '✅ Подтвердить рассылку'.\n\n"
             "*Текущий введенный текст:* \n"
         )
-        full_instruction = instruction_text + (f"`{esc_md2(current_text)}`" if current_text else "_Пока не введено_")
-
+        # ВРЕМЕННО: Простое сообщение без Markdown и esc_md2 для теста
+        simple_text = "Меню рассылки. Введите текст и нажмите подтвердить."
         keyboard = [
             [InlineKeyboardButton("✅ Подтвердить рассылку", callback_data="st:broadcast_start")],
             [InlineKeyboardButton("❌ Отменить", callback_data="st:menu")], # Возврат в меню
         ]
         await query.edit_message_text(
-            full_instruction,
+            text=simple_text, # <-- Используем простой текст
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.MARKDOWN_V2
+            parse_mode=None # <-- Убираем MarkdownV2
         )
         return
 
@@ -2035,6 +2036,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
