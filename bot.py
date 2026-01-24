@@ -1490,7 +1490,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     worksheet = GS_AUTO_NURTURE_WS # <-- ИСПОЛЬЗУЕМ ГЛОБАЛЬНУЮ ПЕРЕМЕННУЮ
                     # Обновляем только ячейку с периодом (I1) - строка 1, используя правильный формат
                     worksheet.update('I1', [[input_as_int]]) # <-- ИСПРАВЛЕНО: передаём как список списков
-                    await update.message.reply_text(f"✅ Период авторассылки обновлён на: {input_as_int} дней.", parse_mode=ParseMode.MARKDOWN_V2)
+                    await update.message.reply_text(f"✅ Период авторассылки обновлён на: <b>{input_as_int}</b> дней.", parse_mode='HTML') # <-- НОВОЕ
                     print(f"✅ Админ {admin_id} обновил период авторассылки до {input_as_int} дней.")
                     return # Завершаем обработку для админа
                 except gspread.exceptions.WorksheetNotFound:
@@ -1515,7 +1515,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             worksheet = GS_AUTO_NURTURE_WS # <-- ИСПОЛЬЗУЕМ ГЛОБАЛЬНУЮ ПЕРЕМЕННУЮ
             # Обновляем только ячейку с текстом (H1) - строка 1, используя правильный формат
             worksheet.update('H1', [[text_input]]) # <-- ИСПРАВЛЕНО: передаём как список списков
-            await update.message.reply_text(f"✅ Текст авторассылки обновлён:\n`{esc_md2(text_input)}`", parse_mode=ParseMode.MARKDOWN_V2)
+            import html # Импортируем модуль html
+            escaped_for_html = html.escape(text_input) # Экранируем текст для HTML
+            await update.message.reply_text(f"✅ Текст авторассылки обновлён:\n<code>{escaped_for_html}</code>", parse_mode='HTML') # <-- НОВОЕ
             print(f"✅ Админ {admin_id} обновил текст авторассылки.")
             return # Завершаем обработку для админа
         except gspread.exceptions.WorksheetNotFound:
@@ -2413,6 +2415,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
