@@ -680,16 +680,19 @@ async def handle_broadcast_request(update: Update, context: ContextTypes.DEFAULT
     report = await broadcast_message_to_users(context.bot, users, message_text)
 
     # Отправка отчета администратору
+    # Экранируем текст рассылки, так как он может содержать точки и другие символы Markdown
+    escaped_message_text = esc_md2(message_text)
+    report_text = f"📤 *ЗАПРОС НА РАССЫЛКУ ОТПРАВЛЕН*\n\nСообщение:\n`{escaped_message_text}`\n\n---\n\n{report}"
     try:
         # Попробуем отредактировать сообщение с запросом
         await query.edit_message_text(
-            text=f"📤 *ЗАПРОС НА РАССЫЛКУ ОТПРАВЛЕН*\n\nСообщение:\n`{message_text}`\n\n---\n\n{report}",
+            text=report_text,
             parse_mode=ParseMode.MARKDOWN_V2
         )
     except Exception:
         # Если невозможно отредактировать (например, слишком длинное), отправим новое
         await query.message.reply_text(
-            text=f"📤 *ЗАПРОС НА РАССЫЛКУ ОТПРАВЛЕН*\n\nСообщение:\n`{message_text}`\n\n---\n\n{report}",
+            text=report_text,
             parse_mode=ParseMode.MARKDOWN_V2
         )
 
@@ -2032,6 +2035,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
