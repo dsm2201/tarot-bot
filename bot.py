@@ -660,7 +660,9 @@ async def broadcast_message_to_users(bot, user_list, message_text):
 
     return "\n".join(report_lines)
 
-# --- НОВЫЙ ОБРАБОТЧИК ДЛЯ ЗАПРОСА РАССЫЛКИ ---
+# --- НОВЫЙ ОБРАБОТЧИК ДЛЯ ЗАПРОСА РАССЫЛКИ (исправленный для HTML)---
+import html
+
 async def handle_broadcast_request(update: Update, context: ContextTypes.DEFAULT_TYPE, message_text: str):
     """Обрабатывает запрос на рассылку от администратора."""
     query = update.callback_query
@@ -677,26 +679,90 @@ async def handle_broadcast_request(update: Update, context: ContextTypes.DEFAULT
         return
 
     # Вызов функции рассылки
-    report = await broadcast_message_to_users(context.bot, users, message_text)
+    report = await broadcast_message_to_users_html(context.bot, users, message_text) # Вызываем новую версию
 
     # Отправка отчета администратору
-    # Экранируем текст рассылки, так как он может содержать точки и другие символы Markdown
-    escaped_message_text = esc_md2(message_text)
-    report_text = f"📤 *ЗАПРОС НА РАССЫЛКУ ОТПРАВЛЕН*\n\nСообщение:\n`{escaped_message_text}`\n\n---\n\n{report}"
+    escaped_message_text = html.escape(message_text) # Экранируем текст рассылки
+    report_html = f"<b>📤 ЗАПРОС НА РАССЫЛКУ ОТПРАВЛЕН</b>\n\n<b>Сообщение:</b>\n<pre>{escaped_message_text}</pre>\n\n---\n\n{report}"
     try:
         # Попробуем отредактировать сообщение с запросом
         await query.edit_message_text(
-            text=report_text,
-            parse_mode=ParseMode.MARKDOWN_V2
+            text=report_html,
+            parse_mode='HTML'
         )
     except Exception:
         # Если невозможно отредактировать (например, слишком длинное), отправим новое
         await query.message.reply_text(
-            text=report_text,
-            parse_mode=ParseMode.MARKDOWN_V2
+            text=report_html,
+            parse_mode='HTML'
         )
 
     print(f"📤 Рассылка завершена. Отчет отправлен администратору {user.id}.")
+
+# --- НОВАЯ ВЕРСИЯ broadcast_message_to_users для генерации HTML отчета ---
+async def broadcast_message_to_users_html(bot, user_list, message_text):
+    """
+    Выполняет рассылку сообщения указанному списку пользователей.
+
+    Args:
+        bot: Экземпляр бота telegram.ext.Application.
+        user_list (list): Список словарей пользователей (например, из load_users).
+                           Должен содержать ключ 'user_id'.
+        message_text (str): Текст сообщения для рассылки.
+
+    Returns:
+        str: Отформатированный HTML отчет о результатах рассылки.
+    """
+    success_count = 0
+    failure_count = 0
+    failure_details = []
+
+    unique_user_ids = set()
+    for user_data in user_list:
+        user_id_str = user_data.get("user_id", "").strip()
+        if user_id_str:
+            try:
+                user_id_int = int(user_id_str)
+                unique_user_ids.add(user_id_int)
+            except ValueError:
+                print(f"⚠️ Неверный ID пользователя: '{user_id_str}', пропущен.")
+
+    total_recipients = len(unique_user_ids)
+
+    if total_recipients == 0:
+        return "❌ Не найдено корректных ID пользователей для рассылки."
+
+    print(f"📢 Начинаю рассылку {message_text[:50]}... (всего {total_recipients} уникальных пользователей)")
+
+    for user_id in unique_user_ids:
+        try:
+            await bot.send_message(chat_id=user_id, text=message_text)
+            success_count += 1
+            print(f"✅ Сообщение успешно отправлено пользователю {user_id}")
+        except Exception as e:
+            failure_count += 1
+            error_detail = f"user_id: {user_id}, error: {type(e).__name__} - {str(e)}"
+            failure_details.append(error_detail)
+            print(f"❌ Ошибка при отправке пользователю {user_id}: {e}")
+
+    # Формируем HTML-отчет
+    import html
+    report_parts = []
+    report_parts.append(f"<b>📢 РЕЗУЛЬТАТЫ РАССЫЛКИ</b>")
+    report_parts.append(f"Всего пользователей для рассылки: <b>{total_recipients}</b>")
+    report_parts.append(f"✅ Успешно доставлено: <b>{success_count}</b>")
+    report_parts.append(f"❌ Не доставлено: <b>{failure_count}</b>")
+    report_parts.append("---")
+
+    if failure_details:
+        report_parts.append("<b>Детали ошибок:</b>")
+        for detail in failure_details:
+            # Экранируем детали ошибки для HTML
+            escaped_detail = html.escape(detail)
+            report_parts.append(f"<pre>{escaped_detail}</pre>")
+        report_parts.append("---")
+
+    return "\n".join(report_parts)
 
 async def send_card_of_the_day_to_channel(context: ContextTypes.DEFAULT_TYPE):
     """Отправляет карту дня в канал если карта дня включена."""
@@ -1276,23 +1342,27 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         # Получаем текущий текст, если он был введен ранее
         current_text = context.bot_data.get(temp_key, "")
 
-        instruction_text = (
-            "📢 *МЕНЮ РАССЫЛКИ*\n\n"
+        # Подготовим HTML-разметку
+        instruction_html = (
+            "<b>📢 МЕНЮ РАССЫЛКИ</b>\n\n"
             "Для выполнения рассылки:\n"
-            "1. Отправьте *текст сообщения* для рассылки в этот чат.\n"
+            "1. Отправьте <i>текст сообщения</i> для рассылки в этот чат.\n"
             "2. После отправки текста нажмите кнопку '✅ Подтвердить рассылку'.\n\n"
-            "*Текущий введенный текст:* \n"
+            "<b>Текущий введенный текст:</b> \n"
         )
-        # ВРЕМЕННО: Простое сообщение без Markdown и esc_md2 для теста
-        simple_text = "Меню рассылки. Введите текст и нажмите подтвердить."
+        # Экранируем HTML-специфичные символы в введенном тексте
+        import html
+        escaped_current_text = html.escape(current_text)
+        full_instruction_html = instruction_html + (f"<pre>{escaped_current_text}</pre>" if current_text else "_Пока не введено_")
+
         keyboard = [
             [InlineKeyboardButton("✅ Подтвердить рассылку", callback_data="st:broadcast_start")],
             [InlineKeyboardButton("❌ Отменить", callback_data="st:menu")], # Возврат в меню
         ]
         await query.edit_message_text(
-            text=simple_text, # <-- Используем простой текст
+            text=full_instruction_html,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=None # <-- Убираем MarkdownV2
+            parse_mode='HTML' # <-- Используем HTML
         )
         return
 
@@ -2036,6 +2106,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
