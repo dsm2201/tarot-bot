@@ -771,25 +771,37 @@ from datetime import datetime, timedelta, date
 from pytz import UTC
 import gspread # Убедитесь, что gspread установлен
 
+# --- ОБНОВЛЁННАЯ ФУНКЦИЯ ДЛЯ АВТОМАТИЧЕСКОЙ РАССЫЛКИ С ИСПОЛЬЗОВАНИЕМ ОТДЕЛЬНОЙ ВКЛАДКИ И ГЛОБАЛЬНОЙ ПЕРЕМЕННОЙ GS_SHEET ---
+import asyncio
+from datetime import datetime, timedelta, date, time # time уже импортирован
+from pytz import UTC
+import gspread # Убедитесь, что gspread установлен
+
 async def auto_nurture_broadcast(context: ContextTypes.DEFAULT_TYPE):
     """
     Функция автоматической рассылки по воронке.
     Вызывается JobQueue по расписанию.
     Читает настройки из вкладки 'auto_nurture', строка 1.
     Проверяет историю отправок в той же вкладке.
+    Использует глобальную переменную GS_SHEET.
     """
     print("🔄 Запуск автоматической воронки из вкладки 'auto_nurture'...")
     bot = context.bot
 
+    # Проверяем, инициализирована ли глобальная переменная GS_SHEET
+    global GS_SHEET
+    if GS_SHEET is None:
+        print("❌ Ошибка: GS_SHEET не инициализирована. Убедитесь, что init_gs_client() была вызвана при запуске.")
+        return
+
     try:
-        gc = gspread.service_account(filename=GSPREAD_JSON_PATH)
-        sh = gc.open_by_key(GSHEET_KEY)
-        worksheet = sh.worksheet("auto_nurture") # Открываем нужную вкладку
+        # Открываем нужную вкладку через уже инициализированную таблицу
+        worksheet = GS_SHEET.worksheet("auto_nurture")
     except gspread.exceptions.WorksheetNotFound:
         print("❌ Вкладка 'auto_nurture' не найдена в таблице.")
         return
     except Exception as e:
-        print(f"❌ Ошибка доступа к Google Sheets: {e}")
+        print(f"❌ Ошибка доступа к вкладке 'auto_nurture': {e}")
         return
 
     # 1. Чтение настроек из строки 1
@@ -852,7 +864,7 @@ async def auto_nurture_broadcast(context: ContextTypes.DEFAULT_TYPE):
                 except ValueError:
                     print(f"⚠️ Неверный формат даты в истории для user_id {user_id_str}: '{sent_date_str}'")
 
-    # 4. Загрузка *всех* пользователей из основной вкладки (предположим, это sheet1)
+    # 4. Загрузка *всех* пользователей из основной вкладки (предположим, это USERS_SHEET_NAME, к которому у нас есть доступ через GS_USERS_WS, но проще использовать get_cached_users/load_users)
     # Используем вашу существующую функцию для получения пользователей
     users = get_cached_users() # или load_users(), если у вас нет кэша
 
@@ -1433,41 +1445,58 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- НОВЫЙ БЛОК: Обработка ввода текста/периода авторассылки админом ---
     if admin_id in ADMIN_IDS and update.message.text:
         text_input = update.message.text.strip()
+
+        # Проверяем, является ли ввод числом (период)
         try:
-            # Проверяем, является ли ввод числом (период)
             input_as_int = int(text_input)
             if input_as_int > 0:
                 # Это период
+                global GS_SHEET # Используем глобальную переменную
+                if GS_SHEET is None:
+                    print(f"❌ Ошибка: GS_SHEET не инициализирована для обновления периода.")
+                    await update.message.reply_text(f"❌ Ошибка обновления периода: подключение к таблице не готово.")
+                    return
                 try:
-                    gc = gspread.service_account(filename=GSPREAD_JSON_PATH)
-                    sh = gc.open_by_key(GSHEET_KEY)
-                    worksheet = sh.worksheet("auto_nurture")
+                    worksheet = GS_SHEET.worksheet("auto_nurture") # Открываем нужную вкладку
                     # Обновляем только ячейку с периодом (I1)
                     worksheet.update('I1', input_as_int)
                     await update.message.reply_text(f"✅ Период авторассылки обновлён на: *{input_as_int}* дней.", parse_mode=ParseMode.MARKDOWN_V2)
                     print(f"✅ Админ {admin_id} обновил период авторассылки до {input_as_int} дней.")
                     return # Завершаем обработку для админа
+                except gspread.exceptions.WorksheetNotFound:
+                    print("❌ Вкладка 'auto_nurture' не найдена для обновления периода.")
+                    await update.message.reply_text(f"❌ Ошибка обновления периода: вкладка 'auto_nurture' не найдена.")
+                    return
                 except Exception as e:
                     print(f"❌ Ошибка обновления периода: {e}")
                     await update.message.reply_text(f"❌ Ошибка обновления периода: {e}")
                     return
         except ValueError:
             # Не число, значит, это текст
-            try:
-                gc = gspread.service_account(filename=GSPREAD_JSON_PATH)
-                sh = gc.open_by_key(GSHEET_KEY)
-                worksheet = sh.worksheet("auto_nurture")
-                # Обновляем только ячейку с текстом (H1)
-                worksheet.update('H1', text_input)
-                await update.message.reply_text(f"✅ Текст авторассылки обновлён:\n`{esc_md2(text_input)}`", parse_mode=ParseMode.MARKDOWN_V2)
-                print(f"✅ Админ {admin_id} обновил текст авторассылки.")
-                return # Завершаем обработку для админа
-            except Exception as e:
-                print(f"❌ Ошибка обновления текста: {e}")
-                await update.message.reply_text(f"❌ Ошибка обновления текста: {e}")
-                return
-    # --- КОНЕЦ НОВОГО БЛОКА ---
-
+            pass
+        # Если не число, значит, это текст
+        # (проверка числа выше, если прошла успешно, функция завершится return)
+        # Поэтому если мы здесь, text_input - это текст
+        global GS_SHEET # Используем глобальную переменную
+        if GS_SHEET is None:
+            print(f"❌ Ошибка: GS_SHEET не инициализирована для обновления текста.")
+            await update.message.reply_text(f"❌ Ошибка обновления текста: подключение к таблице не готово.")
+            return
+        try:
+            worksheet = GS_SHEET.worksheet("auto_nurture") # Открываем нужную вкладку
+            # Обновляем только ячейку с текстом (H1)
+            worksheet.update('H1', text_input)
+            await update.message.reply_text(f"✅ Текст авторассылки обновлён:\n`{esc_md2(text_input)}`", parse_mode=ParseMode.MARKDOWN_V2)
+            print(f"✅ Админ {admin_id} обновил текст авторассылки.")
+            return # Завершаем обработку для админа
+        except gspread.exceptions.WorksheetNotFound:
+            print("❌ Вкладка 'auto_nurture' не найдена для обновления текста.")
+            await update.message.reply_text(f"❌ Ошибка обновления текста: вкладка 'auto_nurture' не найдена.")
+            return
+        except Exception as e:
+            print(f"❌ Ошибка обновления текста: {e}")
+            await update.message.reply_text(f"❌ Ошибка обновления текста: {e}")
+            return
     # --- Оригинальная логика для обычных пользователей (и остальная для админов) ---
     text = (update.message.text or "").strip()
     lower = text.lower()
@@ -1518,29 +1547,38 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
     parts = data.split(":")
     action = parts[1]
 
-    # ===== cod_status =====
-        # --- НОВОЕ ДЕЙСТВИЕ ДЛЯ РАССЫЛКИ ---
-
     # --- НОВОЕ ДЕЙСТВИЕ ДЛЯ АВТОРАССЫЛКИ ---
     if action == "auto_nurture_menu":
         # Открываем меню управления авторассылкой
-        try:
-            gc = gspread.service_account(filename=GSPREAD_JSON_PATH)
-            sh = gc.open_by_key(GSHEET_KEY)
-            worksheet = sh.worksheet("auto_nurture")
-            settings_row = worksheet.row_values(1)
-            current_text = settings_row[7] if len(settings_row) > 7 else ""
-            current_period = settings_row[8] if len(settings_row) > 8 else ""
-        except Exception as e:
-            print(f"❌ Ошибка чтения настроек авторассылки: {e}")
-            current_text = "Ошибка загрузки"
-            current_period = "Ошибка загрузки"
+        global GS_SHEET # Используем глобальную переменную
+        if GS_SHEET is None:
+            print("❌ Ошибка: GS_SHEET не инициализирована для меню авторассылки.")
+            current_text = "Ошибка подключения"
+            current_period = "Ошибка подключения"
+        else:
+            try:
+                worksheet = GS_SHEET.worksheet("auto_nurture") # Открываем нужную вкладку
+                settings_row = worksheet.row_values(1)
+                current_text = settings_row[7] if len(settings_row) > 7 else ""
+                current_period = settings_row[8] if len(settings_row) > 8 else ""
+            except gspread.exceptions.WorksheetNotFound:
+                print("❌ Вкладка 'auto_nurture' не найдена для меню.")
+                current_text = "Вкладка не найдена"
+                current_period = "Вкладка не найдена"
+            except Exception as e:
+                print(f"❌ Ошибка чтения настроек авторассылки в меню: {e}")
+                current_text = "Ошибка загрузки"
+                current_period = "Ошибка загрузки"
+
+        # Экранируем полученные значения перед вставкой в Markdown
+        escaped_current_text = esc_md2(current_text)
+        escaped_current_period = esc_md2(str(current_period))
 
         instruction_text = (
             "📤 *МЕНЮ АВТОРАССЫЛКИ*\n\n"
             "Здесь можно настроить автоматическую рассылку.\n\n"
-            f"*Текущий текст:* \n`{esc_md2(current_text)}`\n\n"
-            f"*Текущий период (дней):* `{esc_md2(str(current_period))}`\n\n"
+            f"*Текущий текст:* \n`{escaped_current_text}`\n\n" # <-- Теперь безопасно
+            f"*Текущий период (дней):* `{escaped_current_period}`\n\n" # <-- Теперь безопасно
             "Для изменения:\n"
             "1. Отправьте *новый текст* в этот чат.\n"
             "2. Отправьте *новый период* (число дней) в этот чат.\n"
@@ -1557,8 +1595,6 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode=ParseMode.MARKDOWN_V2
         )
         return
-
-    # --- (остальные if/elif действия) ---
     
     if action == "broadcast_menu":
         # Показываем меню для ввода сообщения рассылки
@@ -2343,6 +2379,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
