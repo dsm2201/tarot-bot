@@ -83,12 +83,12 @@ def get_admin_keyboard():
     """ЕДИНАЯ клавиатура админки"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📅 Карта дня →", callback_data="st:card_menu")],
+        [InlineKeyboardButton("📢 Рассылка пользователям", callback_data="st:broadcast_menu")], # <-- НОВАЯ КНОПКА
         [InlineKeyboardButton("🔄 Обновить расклады", callback_data="st:reload_packs")],
         [InlineKeyboardButton("📊 Статистика →", callback_data="st:stats_menu")],
         [InlineKeyboardButton("👥 Список пользователей →", callback_data="st:users_menu")],
         [InlineKeyboardButton("🔄 Обновить попытки", callback_data="st:reset_attempts")],
     ])
-
 
 def init_gs_client():
     global GS_CLIENT, GS_SHEET, GS_USERS_WS, GS_ACTIONS_WS, GS_NURTURE_WS, GS_CARD_OF_DAY_WS, GS_PACKS_WS
@@ -597,6 +597,104 @@ def load_card_of_the_day() -> dict | None:
         print(f">>> load_card_of_the_day error: {e}")
         return None
 
+# --- НОВАЯ ФУНКЦИЯ ДЛЯ РАССЫЛКИ ---
+async def broadcast_message_to_users(bot, user_list, message_text):
+    """
+    Выполняет рассылку сообщения указанному списку пользователей.
+
+    Args:
+        bot: Экземпляр бота telegram.ext.Application.
+        user_list (list): Список словарей пользователей (например, из load_users).
+                           Должен содержать ключ 'user_id'.
+        message_text (str): Текст сообщения для рассылки.
+
+    Returns:
+        str: Отформатированный отчет о результатах рассылки.
+    """
+    success_count = 0
+    failure_count = 0
+    failure_details = []
+
+    unique_user_ids = set()
+    for user_data in user_list:
+        user_id_str = user_data.get("user_id", "").strip()
+        if user_id_str:
+            try:
+                user_id_int = int(user_id_str)
+                unique_user_ids.add(user_id_int)
+            except ValueError:
+                print(f"⚠️ Неверный ID пользователя: '{user_id_str}', пропущен.")
+
+    total_recipients = len(unique_user_ids)
+
+    if total_recipients == 0:
+        return "❌ Не найдено корректных ID пользователей для рассылки."
+
+    print(f"📢 Начинаю рассылку {message_text[:50]}... (всего {total_recipients} уникальных пользователей)")
+
+    for user_id in unique_user_ids:
+        try:
+            await bot.send_message(chat_id=user_id, text=message_text)
+            success_count += 1
+            print(f"✅ Сообщение успешно отправлено пользователю {user_id}")
+        except Exception as e:
+            failure_count += 1
+            error_detail = f"user_id: {user_id}, error: {type(e).__name__} - {str(e)}"
+            failure_details.append(error_detail)
+            print(f"❌ Ошибка при отправке пользователю {user_id}: {e}")
+
+    report_lines = []
+    report_lines.append(f"📢 *РЕЗУЛЬТАТЫ РАССЫЛКИ*")
+    report_lines.append(f"Всего пользователей для рассылки: *{total_recipients}*")
+    report_lines.append(f"✅ Успешно доставлено: *{success_count}*")
+    report_lines.append(f"❌ Не доставлено: *{failure_count}*")
+    report_lines.append("---")
+
+    if failure_details:
+        report_lines.append("*Детали ошибок:*")
+        for detail in failure_details:
+            # Экранируем символы Markdown в деталях ошибки, так как они могут содержать _
+            escaped_detail = esc_md2(detail)
+            report_lines.append(f"`{escaped_detail}`")
+        report_lines.append("---")
+
+    return "\n".join(report_lines)
+
+# --- НОВЫЙ ОБРАБОТЧИК ДЛЯ ЗАПРОСА РАССЫЛКИ ---
+async def handle_broadcast_request(update: Update, context: ContextTypes.DEFAULT_TYPE, message_text: str):
+    """Обрабатывает запрос на рассылку от администратора."""
+    query = update.callback_query
+    user = query.from_user
+    print(f"📤 Администратор {user.id} запрашивает рассылку: {message_text[:100]}...")
+
+    # Загрузка списка пользователей
+    users = get_cached_users() # Используем кэшированную функцию, если доступна
+
+    if not users:
+        error_msg = "❌ Не удалось получить список пользователей для рассылки."
+        await query.edit_message_text(error_msg)
+        print(error_msg)
+        return
+
+    # Вызов функции рассылки
+    report = await broadcast_message_to_users(context.bot, users, message_text)
+
+    # Отправка отчета администратору
+    try:
+        # Попробуем отредактировать сообщение с запросом
+        await query.edit_message_text(
+            text=f"📤 *ЗАПРОС НА РАССЫЛКУ ОТПРАВЛЕН*\n\nСообщение:\n`{message_text}`\n\n---\n\n{report}",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+    except Exception:
+        # Если невозможно отредактировать (например, слишком длинное), отправим новое
+        await query.message.reply_text(
+            text=f"📤 *ЗАПРОС НА РАССЫЛКУ ОТПРАВЛЕН*\n\nСообщение:\n`{message_text}`\n\n---\n\n{report}",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+
+    print(f"📤 Рассылка завершена. Отчет отправлен администратору {user.id}.")
+
 async def send_card_of_the_day_to_channel(context: ContextTypes.DEFAULT_TYPE):
     """Отправляет карту дня в канал если карта дня включена."""
     # Проверяем статус
@@ -1086,30 +1184,50 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("st:"):
         await handle_stats_callback(update, context, data)
 
-
+# --- ОБНОВЛЁННЫЙ ОБРАБОТЧИК handle_text ---
+# Теперь он должен учитывать временный ввод текста для рассылки админом.
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
 
+    user = update.effective_user
+    admin_id = user.id
+
+    # --- НОВЫЙ БЛОК: Обработка ввода текста рассылки админом ---
+    # Проверяем, является ли пользователь админом и вводит ли он текст для рассылки
+    temp_key = f"temp_broadcast_text_{admin_id}"
+    if admin_id in ADMIN_IDS and update.message.text:
+        # Сохраняем текст как временный для этого админа
+        context.bot_data[temp_key] = update.message.text
+        # Отправляем подтверждение пользователю
+        await update.message.reply_text(
+            f"✅ Текст рассылки временно сохранен:\n`{esc_md2(update.message.text)}`\n\n"
+            f"Перейдите в админ-меню и нажмите '📢 Рассылка пользователям' -> '✅ Подтвердить рассылку', "
+            f"чтобы выполнить рассылку.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        # Завершаем обработку для админа, чтобы не сработал код ниже (про "расклад")
+        return
+    # --- КОНЕЦ НОВОГО БЛОКА ---
+
+    # --- Оригинальная логика для обычных пользователей (и остальная для админов) ---
     text = (update.message.text or "").strip()
     lower = text.lower()
-
     if "расклад" in lower:
+        # ... (ваш старый код для обработки "расклад" начинается здесь)
         user = update.effective_user
         user_id = user.id
         username = user.username or ""
         first_name = user.first_name or ""
-
         reply = (
-            "Поймала твой запрос на индивидуальный расклад. 💫\n\n"
+            "Поймала твой запрос на индивидуальный расклад. 💫\n"
             "Напиши, пожалуйста, про какую ситуацию хочешь посмотреть:\n"
             "– в чём сейчас вопрос/запрос;\n"
-            "– какой формат тебе комфортнее (голосом, текстом, поэтапно).\n\n"
+            "– какой формат тебе комфортнее (голосом, текстом, поэтапно).\n"
             "Я отвечу и предложу варианты по формату и стоимости."
             "Или сразу пиши мне в ЛС @Tatiataro18"
         )
         await update.message.reply_text(reply)
-
         admin_msg = (
             "🔔 Запрос на РАСКЛАД\n"
             f"id: {user_id}\n"
@@ -1122,8 +1240,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(chat_id=admin_id, text=admin_msg)
             except Exception as e:
                 print(f"send RASKLAD notify error to {admin_id}: {e}")
-
-# ===== админ‑меню и статистика =====
+        # ... (остальной старый код для "расклад" продолжается)
 
 async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -1144,6 +1261,52 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
     action = parts[1]
 
     # ===== cod_status =====
+        # --- НОВОЕ ДЕЙСТВИЕ ДЛЯ РАССЫЛКИ ---
+    if action == "broadcast_menu":
+        # Показываем меню для ввода сообщения рассылки
+        # Так как бот не может просто так запросить ввод, мы дадим инструкции и кнопку подтверждения
+        # Используем временное хранилище в bot_data для текста рассылки от конкретного админа
+        admin_id = user.id
+        temp_key = f"temp_broadcast_text_{admin_id}"
+
+        # Получаем текущий текст, если он был введен ранее
+        current_text = context.bot_data.get(temp_key, "")
+
+        instruction_text = (
+            "📢 *МЕНЮ РАССЫЛКИ*\n\n"
+            "Для выполнения рассылки:\n"
+            "1. Отправьте *текст сообщения* для рассылки в этот чат.\n"
+            "2. После отправки текста нажмите кнопку '✅ Подтвердить рассылку'.\n\n"
+            "*Текущий введенный текст:* \n"
+        )
+        full_instruction = instruction_text + (f"`{esc_md2(current_text)}`" if current_text else "_Пока не введено_")
+
+        keyboard = [
+            [InlineKeyboardButton("✅ Подтвердить рассылку", callback_data="st:broadcast_start")],
+            [InlineKeyboardButton("❌ Отменить", callback_data="st:menu")], # Возврат в меню
+        ]
+        await query.edit_message_text(
+            full_instruction,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    elif action == "broadcast_start":
+        admin_id = user.id
+        temp_key = f"temp_broadcast_text_{admin_id}"
+        message_to_send = context.bot_data.get(temp_key, "")
+
+        if not message_to_send:
+             await query.answer("❌ Нет текста для рассылки. Сначала введите текст.", show_alert=True)
+             return
+
+        # Запускаем рассылку
+        await handle_broadcast_request(update, context, message_to_send)
+        # Очищаем временный текст после отправки
+        context.bot_data.pop(temp_key, None)
+        return
+
     if action == "cod_status":
         current = CARD_OF_DAY_STATUS.get("enabled", True)
         CARD_OF_DAY_STATUS["enabled"] = not current
@@ -1869,6 +2032,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
