@@ -2325,7 +2325,7 @@ def main():
     job_queue = app.job_queue
     job_queue.run_daily(
         callback=auto_nurture_broadcast, # Наша ОБНОВЛЁННАЯ функция
-        time=datetime.time(hour=10, tzinfo=UTC), # Время в UTC (например, 10:00 UTC). Выберите удобное.
+        time=dt_time(hour=10, tzinfo=UTC), # <-- Используем dt_time # Время в UTC (например, 10:00 UTC). Выберите удобное.
         name="auto_nurture_job" # Имя для идентификации
     )
     print("✅ Джоба 'auto_nurture_job' запланирована (ежедневно в 10:00 UTC). Читает настройки из вкладки 'auto_nurture'.")
@@ -2343,6 +2343,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
