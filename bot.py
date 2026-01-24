@@ -1477,20 +1477,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if admin_id in ADMIN_IDS and update.message.text:
         text_input = update.message.text.strip()
 
-        # Проверяем, является ли ввод числом (период)
+                # Проверяем, является ли ввод числом (период)
         try:
             input_as_int = int(text_input)
             if input_as_int > 0:
                 # Это период
-                # global GS_SHEET # <-- УДАЛЕНО: уже объявлено в начале функции
                 if GS_SHEET is None:
                     print(f"❌ Ошибка: GS_SHEET не инициализирована для обновления периода.")
                     await update.message.reply_text(f"❌ Ошибка обновления периода: подключение к таблице не готово.")
                     return
                 try:
                     worksheet = GS_AUTO_NURTURE_WS # <-- ИСПОЛЬЗУЕМ ГЛОБАЛЬНУЮ ПЕРЕМЕННУЮ
-                    # Обновляем только ячейку с периодом (I1)
-                    worksheet.update('I1', input_as_int)
+                    # Обновляем только ячейку с периодом (I1) - строка 1, используя правильный формат
+                    worksheet.update('I1', [[input_as_int]]) # <-- ИСПРАВЛЕНО: передаём как список списков
                     await update.message.reply_text(f"✅ Период авторассылки обновлён на: *{input_as_int}* дней.", parse_mode=ParseMode.MARKDOWN_V2)
                     print(f"✅ Админ {admin_id} обновил период авторассылки до {input_as_int} дней.")
                     return # Завершаем обработку для админа
@@ -1508,15 +1507,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Если не число, значит, это текст
         # (проверка числа выше, если прошла успешно, функция завершится return)
         # Поэтому если мы здесь, text_input - это текст
-        # global GS_SHEET # <-- УДАЛЕНО: уже объявлено в начале функции
         if GS_SHEET is None:
             print(f"❌ Ошибка: GS_SHEET не инициализирована для обновления текста.")
             await update.message.reply_text(f"❌ Ошибка обновления текста: подключение к таблице не готово.")
             return
         try:
             worksheet = GS_AUTO_NURTURE_WS # <-- ИСПОЛЬЗУЕМ ГЛОБАЛЬНУЮ ПЕРЕМЕННУЮ
-            # Обновляем только ячейку с текстом (H1)
-            worksheet.update('H1', text_input)
+            # Обновляем только ячейку с текстом (H1) - строка 1, используя правильный формат
+            worksheet.update('H1', [[text_input]]) # <-- ИСПРАВЛЕНО: передаём как список списков
             await update.message.reply_text(f"✅ Текст авторассылки обновлён:\n`{esc_md2(text_input)}`", parse_mode=ParseMode.MARKDOWN_V2)
             print(f"✅ Админ {admin_id} обновил текст авторассылки.")
             return # Завершаем обработку для админа
@@ -2415,6 +2413,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
