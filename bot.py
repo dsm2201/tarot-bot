@@ -1582,21 +1582,21 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
     parts = data.split(":")
     action = parts[1]
 
-    # --- НОВОЕ ДЕЙСТВИЕ ДЛЯ АВТОРАССЫЛКИ ---
+    # --- НОВОЕ ДЕЙСТВИЕ ДЛЯ АВТОРАССЫЛКИ (исправлено для настроек в строке 1 и HTML) ---
     if action == "auto_nurture_menu":
         # Открываем меню управления авторассылкой
-        if GS_AUTO_NURTURE_WS is None: # <-- ИСПРАВЛЕНО: проверяем GS_AUTO_NURTURE_WS, а не GS_SHEET
-            print("❌ Ошибка: GS_SHEET не инициализирована для меню авторассылки.")
-            current_text = "Ошибка подключения"
-            current_period = "Ошибка подключения"
+        if GS_AUTO_NURTURE_WS is None:
+            print("❌ Ошибка: GS_AUTO_NURTURE_WS не инициализирована или вкладка не найдена для меню.")
+            current_text = "Ошибка подключения/Вкладка не найдена"
+            current_period = "Ошибка подключения/Вкладка не найдена"
         else:
             try:
-                worksheet = GS_AUTO_NURTURE_WS # <-- ИСПОЛЬЗУЕМ ГЛОБАЛЬНУЮ ПЕРЕМЕННУЮ
-                settings_row = worksheet.row_values(1)
-                current_text = settings_row[7] if len(settings_row) > 7 else ""
-                current_period = settings_row[8] if len(settings_row) > 8 else ""
+                worksheet = GS_AUTO_NURTURE_WS
+                settings_row = worksheet.row_values(1) # <-- ПРАВИЛЬНО: строка 1
+                current_text = settings_row[7] if len(settings_row) > 7 else "" # <-- ПРАВИЛЬНО: колонка H (индекс 7)
+                current_period = settings_row[8] if len(settings_row) > 8 else "" # <-- ПРАВИЛЬНО: колонка I (индекс 8)
             except gspread.exceptions.WorksheetNotFound:
-                print("❌ Вкладка 'auto_nurture' не найдена для меню.")
+                print("❌ Вкладка 'auto_nurture' не найдена для меню (но переменная была инициализирована как None).")
                 current_text = "Вкладка не найдена"
                 current_period = "Вкладка не найдена"
             except Exception as e:
@@ -1604,18 +1604,19 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 current_text = "Ошибка загрузки"
                 current_period = "Ошибка загрузки"
 
-        # Экранируем полученные значения перед вставкой в Markdown
-        escaped_current_text = esc_md2(current_text)
-        escaped_current_period = esc_md2(str(current_period))
+        # Экранируем полученные значения перед вставкой в HTML
+        import html
+        escaped_current_text = html.escape(current_text) # <-- Экранируем для HTML
+        escaped_current_period = html.escape(str(current_period)) # <-- Экранируем для HTML
 
-        instruction_text = (
-            "📤 *МЕНЮ АВТОРАССЫЛКИ*\n\n"
+        instruction_html = (
+            "<b>📤 МЕНЮ АВТОРАССЫЛКИ</b>\n\n"
             "Здесь можно настроить автоматическую рассылку.\n\n"
-            f"*Текущий текст:* \n`{escaped_current_text}`\n\n" # <-- Теперь безопасно
-            f"*Текущий период (дней):* `{escaped_current_period}`\n\n" # <-- Теперь безопасно
+            f"<b>Текущий текст:</b>\n<pre>{escaped_current_text}</pre>\n\n" # <-- Используем HTML
+            f"<b>Текущий период (дней):</b> <code>{escaped_current_period}</code>\n\n" # <-- Используем HTML
             "Для изменения:\n"
-            "1. Отправьте *новый текст* в этот чат.\n"
-            "2. Отправьте *новый период* (число дней) в этот чат.\n"
+            "1. Отправьте <i>новый текст</i> в этот чат.\n"
+            "2. Отправьте <i>новый период</i> (число дней) в этот чат.\n"
             "3. Изменения сохранятся в таблицу.\n\n"
             "Джоба проверяет каждые 24ч, пора ли отправлять."
         )
@@ -1623,10 +1624,11 @@ async def handle_stats_callback(update: Update, context: ContextTypes.DEFAULT_TY
         keyboard = [
             [InlineKeyboardButton("❌ Закрыть", callback_data="st:menu")], # Возврат в меню
         ]
+        # print(f"DEBUG: Sending HTML: {instruction_html}") # <-- Можно раскомментировать для отладки
         await query.edit_message_text(
-            instruction_text,
+            text=instruction_html,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.MARKDOWN_V2
+            parse_mode='HTML' # <-- Указываем HTML
         )
         return
     
@@ -2413,6 +2415,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
