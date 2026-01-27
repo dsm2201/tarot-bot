@@ -2389,7 +2389,7 @@ def main():
     )
     job_queue.run_daily(
         daily_reminder_job,
-        time=dt_time(4, 5),  # В Москве на 3 часа больше
+        time=dt_time(4, 6),  # В Москве на 3 часа больше
         name="daily_reminder",
     )
 
@@ -2415,6 +2415,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
